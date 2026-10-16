@@ -7,6 +7,9 @@ It does not modify or replace the existing Nim `auto-editor` CLI. Each job has
 a JSON state file and cached stage artifacts under `/data/work/<job_id>`, so a
 restart resumes from the last completed stage.
 
+Testing instructions: [docs/TESTING.md](docs/TESTING.md). Report results with
+[docs/TEST_REPORT_TEMPLATE.md](docs/TEST_REPORT_TEMPLATE.md).
+
 ## Linux and NVIDIA setup
 
 Install Docker Engine and the Docker Compose plugin. For GPU access, install the

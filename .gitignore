@@ -2,6 +2,7 @@
 build*
 ffmpeg_sources
 tests
+!presentation-pipeline/tests/
 
 # Editor
 .vscode
@@ -31,3 +32,9 @@ nimbledeps
 *\.wasm
 *-web\.js
 *-web64\.js
+
+# Presentation pipeline
+presentation-pipeline/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
