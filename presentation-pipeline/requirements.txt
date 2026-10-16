@@ -1,0 +1,5 @@
+faster-whisper==1.2.1
+opencv-python-headless==5.0.0.93
+PyYAML==6.0.3
+requests==2.34.2
+auto-editor==29.3.1
