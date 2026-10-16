@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ state.original_name }} — Presentation pipeline</title>
+<p><a href="{{ url_for('jobs') }}">Upload / all jobs</a></p>
+<h1>{{ state.original_name }}</h1>
+<p>Job: {{ state.job_id }}</p>
+<p>Status: {{ 'done' if state.stage == 'done' else state.status }}</p>
+<p>Last completed stage: {{ state.stage }} ({{ completed }}/{{ stages|length }})</p>
+<progress value="{{ completed }}" max="{{ stages|length }}">{{ completed }}/{{ stages|length }}</progress>
+<ol>
+{% for stage in stages %}
+  <li>{{ stage }}{% if loop.index <= completed %} — complete{% endif %}</li>
+{% endfor %}
+</ol>
+{% if state.error %}<p>Error: {{ state.error }}</p>{% endif %}
+<p>Refresh this page to update progress.</p>
+<h2>Outputs</h2>
+<ul>
+{% for filename in files %}
+  <li><a href="{{ url_for('download', job_id=state.job_dir.name, filename=filename) }}">{{ filename }}</a></li>
+{% endfor %}
+</ul>
+{% if report %}
+<h2>Report</h2>
+{{ report }}
+{% endif %}
+</html>

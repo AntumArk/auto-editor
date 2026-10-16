@@ -35,10 +35,12 @@ stop other GPU workloads, and begin with a short clip.
 - Disable LLM review with `PIPELINE__LLM__ENABLED=false`. For a manual run,
   `docker compose run --rm --no-deps -e PIPELINE__LLM__ENABLED=false pipeline ...`
   avoids starting Ollama; stop an already-running Ollama service separately.
-- `compute_type=int8_float16` is a useful faster-whisper memory-saving option,
-  **but it is not exposed by the current pipeline configuration**.
-  Transcription tries CUDA `float16`, then CPU `int8` after a
-  `RuntimeError` or `ValueError`. Using that GPU precision requires a code change.
+- Set `transcription.compute_type: int8_float16` (environment:
+  `PIPELINE__TRANSCRIPTION__COMPUTE_TYPE=int8_float16`) for supported GPU
+  quantization. The default `auto` uses GPU `float16` or CPU `int8`.
+- Set `transcription.device: cpu` to avoid CUDA entirely. With `device: auto`,
+  CUDA initialization/transcription failures broadly fall back to CPU; explicit
+  `device: cuda` fails instead of silently falling back.
 
 Model/configuration changes do not invalidate cached transcription. Follow the
 [reset procedure](../README.md#reset-a-job) to retest from the beginning.
@@ -65,6 +67,9 @@ nothing will be cut. The report has a non-LLM summary fallback.
 
 ## File not picked up
 
+These checks apply to `watch`. The CPU quick start runs `serve`: upload or submit
+an inbox path through <http://127.0.0.1:8000>; it does not watch for new files.
+
 - Only files directly in the inbox are scanned, not subdirectories.
 - Default extensions are `.mp4`, `.mov`, `.mkv`, `.avi`, `.webm`, and `.m4v`
   (case-insensitive). A `.part` suffix is intentionally ignored.
@@ -79,10 +84,14 @@ nothing will be cut. The report has a non-LLM summary fallback.
 
 ## Why is the job not reprocessing? How do I force it?
 
-State and artifacts live under `/data/work/<job_id>`. Restarting resumes unfinished
-jobs and skips completed stages/jobs. Reintroducing the same filename stem and
+State and artifacts live under `/data/work/<job_id>`. The watcher resumes unfinished
+jobs on startup and skips completed stages/jobs. Reintroducing the same filename stem and
 content reuses its job ID; changing settings alone does not trigger recomputation.
 The watcher attempts pending-job resumption on startup, not on every inbox poll.
+The Web UI's queue is not restored after a restart: resubmit queued/interrupted
+jobs to reuse their persisted stages. UI settings apply only to new submissions,
+not previously cached stages. Run only one server per work directory, without
+concurrent watchers/manual processors.
 
 Follow [Reset a job](../README.md#reset-a-job): stop all processors, back up the
 ingested source outside work, delete only its job work folder, archive old
@@ -175,20 +184,38 @@ description. Retiming is necessary if you make further edits.
 
 ## Can I run CPU-only?
 
-Yes, but expect much slower transcription, especially with `large-v3`; prefer
-`medium` or smaller and disable LLM review, or use a small CPU Ollama model.
-The current Compose file requires NVIDIA devices for **both** services, so it
-will not simply start on a non-GPU host.
+Yes. Follow the [Low-end / CPU-only quick start](../README.md#low-end--cpu-only-quick-start):
 
-For a CPU-only deployment, adapt a local Compose copy by removing both services'
-GPU device reservation blocks (an empty override may not remove merged values).
-Alternatively run the installed Python requirements and FFmpeg natively, with
-writable path overrides and `python3 -m app.main process /path/to/video.mp4`.
-These deployment adaptations are unverified.
+```sh
+docker compose -f docker-compose.cpu.yml up --build -d
+```
 
-Whisper attempts CUDA first and falls back to CPU `int8` on runtime/value errors;
-there is no supported `transcription.device` override to force CPU. Disabling
-LLM review alone does not remove Compose GPU requirements or stop Ollama.
+This standalone file has no GPU reservations or Ollama dependency; do not merge
+it with the GPU Compose file. It forces device `cpu`, model `small`, automatic
+language detection, and LLM disabled. The shared CUDA-based image is larger than
+a CPU-specific image, but needs no NVIDIA driver or Container Toolkit to run on
+CPU. Expect slower transcription; try `tiny` or `base` for limited hardware.
+The README also documents native Python 3.10+, requirements, FFmpeg, and writable
+local path overrides.
+
+`transcription.device` supports `auto`, `cuda`, and `cpu`. `auto` broadly falls
+back to CPU after CUDA initialization or transcription failures; explicit `cuda`
+does not fall back. `transcription.compute_type: auto` selects GPU `float16` or
+CPU `int8`. Disabling LLM alone does not remove the default GPU Compose file's
+GPU requirements or stop an existing Ollama service.
+
+## Why can the Web UI not open my file? Is it safe to expose?
+
+Submitted paths must be inside the configured inbox (Docker:
+`/data/inbox/...`), not arbitrary host paths. Uploads have a **16 GiB** limit.
+The server keeps inbox source files; CLI `process` moves them unless you use
+`--keep-source` (alias `--copy`).
+
+The UI has one sequential worker and requires manual refresh to see progress,
+the last completed stage, errors, output links, and escaped Markdown reports.
+Native serving defaults to loopback; CPU Docker publishes only
+`127.0.0.1:8000`. There is no authentication or TLS. Bind to `0.0.0.0` or change
+the published host address only on a trusted network, never the public internet.
 
 ## Where are models cached? How much disk space is needed?
 
@@ -223,5 +250,6 @@ YouTube or sharing outputs is a separate, explicit action.
 
 No. The pipeline lives in its own directory and invokes the CLI as a subprocess;
 it does not refactor the Nim core. Timeline edits do not overwrite the source
-media, but **ingest moves the inbox file** into its job work directory. Keep your
+media. By default CLI/watcher ingest **moves the inbox file** into its job work
+directory; CLI `--keep-source`/`--copy` and Web UI jobs copy instead. Keep your
 original recording backed up outside the inbox/work tree.

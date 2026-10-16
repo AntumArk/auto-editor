@@ -15,11 +15,15 @@ def _setting(config, name, default):
 
 
 def transcribe(video_path, cfg, out_dir) -> dict:
-    """Transcribe locally, preferring CUDA float16 and falling back to CPU int8."""
+    """Transcribe on the configured device, with CUDA fallback in auto mode."""
     from faster_whisper import WhisperModel
 
     settings = _setting(cfg, "transcription", {})
     model_name = _setting(settings, "model", "large-v3")
+    device = _setting(settings, "device", "auto")
+    compute_type = _setting(settings, "compute_type", "auto")
+    if device not in ("auto", "cuda", "cpu"):
+        raise ValueError("transcription.device must be auto, cuda, or cpu")
     options = {
         "language": _setting(settings, "language", "lt"),
         "task": _setting(settings, "task", "transcribe"),
@@ -54,15 +58,21 @@ def transcribe(video_path, cfg, out_dir) -> dict:
             ],
         }
 
-    result = None
-    try:
-        result = run("cuda", "float16")
-    except (RuntimeError, ValueError):
-        logging.getLogger(__name__).warning(
-            "CUDA transcription failed; retrying on CPU with int8."
-        )
-    if result is None:
-        result = run("cpu", "int8")
+    def compute_for(target):
+        if compute_type != "auto":
+            return compute_type
+        return "float16" if target == "cuda" else "int8"
+
+    if device == "auto":
+        try:
+            result = run("cuda", compute_for("cuda"))
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "CUDA transcription failed; retrying on CPU.", exc_info=True
+            )
+            result = run("cpu", compute_for("cpu"))
+    else:
+        result = run(device, compute_for(device))
 
     output = Path(out_dir)
     output.mkdir(parents=True, exist_ok=True)

@@ -18,10 +18,16 @@ class PathsConfig:
 @dataclass
 class TranscriptionConfig:
     model: str = "large-v3"
-    language: str = "lt"
+    language: str | None = "lt"
+    device: str = "auto"
+    compute_type: str = "auto"
     task: str = "transcribe"
     vad: bool = True
     word_timestamps: bool = True
+
+    def __post_init__(self) -> None:
+        if self.device not in ("auto", "cuda", "cpu"):
+            raise ValueError("transcription.device must be auto, cuda, or cpu")
 
 
 @dataclass

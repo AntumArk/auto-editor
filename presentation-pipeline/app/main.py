@@ -233,6 +233,13 @@ def main() -> None:
     commands.add_parser("watch", help="Poll the configured inbox for video files")
     process_parser = commands.add_parser("process", help="Process one video file")
     process_parser.add_argument("file", type=Path)
+    process_parser.add_argument(
+        "--copy", "--keep-source", dest="keep_source", action="store_true",
+        help="Copy the video into the workdir instead of moving the original",
+    )
+    serve_parser = commands.add_parser("serve", help="Run the local web UI")
+    serve_parser.add_argument("--host", default="127.0.0.1")
+    serve_parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
     config = load_config(args.config)
 
@@ -240,8 +247,14 @@ def main() -> None:
         from app.watcher import watch
 
         watch(config)
+    elif args.command == "serve":
+        from app.web import create_app
+
+        create_app(config).run(
+            host=args.host, port=args.port, debug=False, use_reloader=False,
+        )
     else:
-        output_dir = process_file(args.file, config)
+        output_dir = process_file(args.file, config, move=not args.keep_source)
         print(f"Processed output: {output_dir}")
 
 

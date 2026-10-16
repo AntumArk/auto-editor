@@ -1,0 +1,23 @@
+services:
+  pipeline:
+    build: .
+    restart: unless-stopped
+    environment:
+      PIPELINE__LLM__ENABLED: "false"
+      PIPELINE__TRANSCRIPTION__DEVICE: cpu
+      PIPELINE__TRANSCRIPTION__MODEL: small
+      PIPELINE__TRANSCRIPTION__LANGUAGE: "null"
+      PIPELINE__PATHS__INBOX: /data/inbox
+      PIPELINE__PATHS__OUTPUT: /data/output
+      PIPELINE__PATHS__WORKDIR: /data/work
+    volumes:
+      - ${PIPELINE_INBOX:-./data/inbox}:/data/inbox
+      - ${PIPELINE_OUTPUT:-./data/output}:/data/output
+      - ${PIPELINE_WORKDIR:-./data/work}:/data/work
+      - whisper-cache:/root/.cache/huggingface
+    command: ["python3", "-m", "app.main", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  whisper-cache:

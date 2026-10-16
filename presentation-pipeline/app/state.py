@@ -29,6 +29,8 @@ class JobState:
     original_name: str | None = None
     stage: str = "ingested"
     artifacts: dict[str, Any] = field(default_factory=dict)
+    status: str = "pending"
+    error: str | None = None
 
     @property
     def path(self) -> Path:
@@ -63,6 +65,8 @@ class JobState:
             original_name=data.get("original_name"),
             stage=data["stage"],
             artifacts=data.get("artifacts", {}),
+            status=data.get("status", "pending"),
+            error=data.get("error"),
         )
 
     def save(self) -> None:
@@ -73,6 +77,8 @@ class JobState:
             "original_name": self.original_name,
             "stage": self.stage,
             "artifacts": self.artifacts,
+            "status": self.status,
+            "error": self.error,
         }
         descriptor, temporary_name = tempfile.mkstemp(dir=self.job_dir, prefix=".state-")
         try:
