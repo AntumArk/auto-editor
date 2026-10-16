@@ -38,3 +38,4 @@ presentation-pipeline/.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+presentation-pipeline/data/output/
