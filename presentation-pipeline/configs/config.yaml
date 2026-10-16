@@ -1,0 +1,39 @@
+paths:
+  inbox: /data/inbox
+  output: /data/output
+  workdir: /data/work
+
+transcription:
+  model: large-v3
+  language: lt
+  task: transcribe
+  vad: true
+  word_timestamps: true
+
+visual:
+  sample_fps: 3
+  change_threshold: 0.04
+  downscale_width: 320
+
+cuts:
+  min_silence_s: 2.0
+  target_pause_s: 0.6
+  speech_margin_s: 0.25
+  settle_after_slide_change_s: 1.0
+  full_remove_min_s: 8.0
+
+llm:
+  enabled: true
+  provider: ollama
+  url: http://ollama:11434
+  model: qwen2.5:7b-instruct
+  timeout_s: 120
+
+report:
+  language: lt
+  min_chapter_gap_s: 10
+
+watcher:
+  poll_interval_s: 5
+  stable_checks: 2
+  video_extensions: [.mp4, .mov, .mkv, .avi, .webm, .m4v]
