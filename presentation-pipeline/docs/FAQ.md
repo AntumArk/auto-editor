@@ -66,6 +66,22 @@ a job failure. Inspect the job's `decisions.json` and pipeline logs.
 Invalid LLM answers are validated and may fall back; LLM failure does not mean
 nothing will be cut. The report has a non-LLM summary fallback.
 
+## `open() got an unexpected keyword argument 'metadata_errors'`
+
+This indicates an incompatible PyAV version. The pinned faster-whisper release
+uses PyAV's `metadata_errors` argument, which PyAV 19 removed. The pipeline
+requirements now constrain PyAV to a compatible version. Rebuild and recreate
+the pipeline container to apply the dependency change:
+
+```sh
+docker compose build pipeline
+docker compose up -d --force-recreate pipeline
+```
+
+For the CPU-only Compose file, add
+`-f docker-compose.cpu.yml` to both commands. For a native installation,
+activate the pipeline environment and run `python -m pip install -r requirements.txt`.
+
 ## File not picked up
 
 These checks apply to `watch`. The CPU quick start runs `serve`: upload or submit
