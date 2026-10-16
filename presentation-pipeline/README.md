@@ -12,15 +12,9 @@ ingest → transcribe → slide detection → cut candidates → LLM review
 
 This Python service is separate from the existing Nim `auto-editor` CLI: it calls
 the `auto-editor` executable, without modifying the Nim core. The Docker image
-currently installs the packaged CLI from `requirements.txt`, not this repository's
-Nim build.
-
-**Integration status:** the parallel integration PR (task `c825d575`) fixes stage
-wiring and original-name output naming. The output contract below describes that
-integrated version; this checkout still has wiring mismatches and may produce
-`source.*` exports or fail at subtitles/report generation. Merge the integration
-fixes before expecting a successful end-to-end run. Do not assume a pipeline CI
-workflow is present until that PR lands.
+installs the packaged CLI from `requirements.txt`, not this repository's Nim build.
+Each job has a JSON state file and cached stage artifacts under
+`/data/work/<job_id>`, so a restart resumes from the last completed stage.
 
 See the [FAQ](docs/FAQ.md), [testing plan](docs/TESTING.md), and
 [test report template](docs/TEST_REPORT_TEMPLATE.md).
@@ -109,10 +103,10 @@ Normally keep the container paths unchanged.
 
 ## 3. Quick start
 
-Run Compose commands from the pipeline directory:
+Run Compose commands from the pipeline directory of your checkout:
 
 ```sh
-cd /home/runner/work/auto-editor/auto-editor/presentation-pipeline
+cd auto-editor/presentation-pipeline
 docker compose build
 docker compose up -d ollama
 docker compose exec ollama ollama pull qwen2.5:7b-instruct
@@ -190,10 +184,10 @@ or explicitly add them to the Compose service environment.
 | `cuts.settle_after_slide_change_s` | `1.0` | Protected seconds after a detected slide change. |
 | `cuts.full_remove_min_s` | `8.0` | Minimum candidate length for full removal with explicit LLM approval. |
 | `llm.enabled` | `true` | Enable local LLM review and report summarization. |
-| `llm.provider` | `ollama` | Provider label; current implementation calls Ollama, not a provider-switching backend. |
+| `llm.provider` | `ollama` | Provider label; current implementation calls Ollama only. |
 | `llm.url` | `http://ollama:11434` | Ollama endpoint; `ollama` is the Compose service hostname. |
 | `llm.model` | `qwen2.5:7b-instruct` | Ollama model tag; pull it before use. |
-| `llm.timeout_s` | `120` | Candidate-review request timeout in seconds; report summarization currently uses its own 30-second timeout. |
+| `llm.timeout_s` | `120` | Candidate-review request timeout in seconds; report summarization uses its own 30-second timeout. |
 | `report.language` | `lt` | Requested LLM summary language; deterministic fallback is not guaranteed to be localized. |
 | `report.min_chapter_gap_s` | `10` | Desired chapter spacing; YouTube's 10-second minimum still applies. |
 | `watcher.poll_interval_s` | `5` | Seconds between size checks and inbox scans. |
@@ -210,22 +204,24 @@ environment variables such as a compute-type setting take effect.
 
 ## 5. Outputs and Resolve/YouTube
 
-With the integration fixes, `/data/output/<job_id>/` contains files named after
-the **original video stem**, e.g. `lecture.mp4` produces:
+`/data/output/<job_id>/` contains files named after the **original video stem**
+(not the working copy's `source` name), e.g. `lecture.mp4` produces:
 
 | File | Use |
 | --- | --- |
 | `<name>.fcpxml` | Cut timeline for DaVinci Resolve, referencing the ingested source media. |
-| `<name>.cutlist.json` | Auditable removed/kept source-time ranges and original/edited durations. |
+| `<name>.cutlist.json` | The single audit file: removed/kept source-time ranges and original/edited durations. |
 | `<name>.source.srt` | Subtitles on the original, uncut timebase. |
 | `<name>.edited.srt` | Subtitles remapped onto the edited timeline. |
 | `<name>.report.md` | Summary, review notes, statistics, and YouTube chapter text. |
-| `<name>.preview.mp4` (optional) | Rendered preview, only when preview export is supported and enabled. |
+| `<name>.preview.mp4` (optional) | Rendered preview, only when preview export is enabled. |
+
+Stage JSON files (`transcript.json`, `visual.json`, `candidates.json`,
+`decisions.json`, …) remain cached separately in the job's work directory.
 
 Preview is not enabled by default. The exporter has a programmatic
 `cfg.export.preview` hook, but the current YAML/dataclass config has no `export`
 section; `PIPELINE__EXPORT__PREVIEW=true` does not enable it through this CLI.
-Do not expect a preview from the stock Compose setup.
 
 In Resolve, choose **File → Import → Timeline**, select the `.fcpxml`, and verify
 the source/timeline frame rate before editing. Menu wording varies by Resolve
@@ -276,9 +272,19 @@ The same source stem/content maps to the same job ID. To force a fresh run:
 
 Do not delete only output files: a completed state will prevent regeneration.
 
-For unit tests without GPU/network execution, follow
-[docs/TESTING.md](docs/TESTING.md); dependencies must already be installed or
-downloaded first. It also covers Docker/GPU smoke tests and short/full recordings.
-Use [docs/TEST_REPORT_TEMPLATE.md](docs/TEST_REPORT_TEMPLATE.md) to record results.
-Some older testing examples use generic `cutlist.json`/`report.md`; use the
-original-stem output names above for the integrated pipeline.
+### Tests
+
+For CPU-only tests without GPU models or network services:
+
+```sh
+cd presentation-pipeline
+pip install -r requirements-test.txt
+pytest
+```
+
+The same tests run in CI on changes under `presentation-pipeline/`. For
+Docker/GPU smoke tests and short/full recordings, follow
+[docs/TESTING.md](docs/TESTING.md) and record results with
+[docs/TEST_REPORT_TEMPLATE.md](docs/TEST_REPORT_TEMPLATE.md). Where older testing
+examples use generic `cutlist.json`/`report.md`, use the original-stem output
+names above.

@@ -1,10 +1,9 @@
 # Presentation pipeline FAQ
 
-See the [setup guide](../README.md) for prerequisites, configuration defaults,
-and the integration-status caveat. Commands here assume the Compose directory:
-`/home/runner/work/auto-editor/auto-editor/presentation-pipeline`.
-Hardware, mount, and Resolve commands are approximate and have not been verified
-on your machine. Replace example filenames and job IDs before running them.
+See the [setup guide](../README.md) for prerequisites and configuration defaults.
+Commands here assume you are in the `presentation-pipeline/` directory of your
+checkout. Hardware, mount, and Resolve commands are approximate and have not been
+verified on your machine. Replace example filenames and job IDs before running them.
 
 ## GPU not detected in the container
 
@@ -38,9 +37,8 @@ stop other GPU workloads, and begin with a short clip.
   avoids starting Ollama; stop an already-running Ollama service separately.
 - `compute_type=int8_float16` is a useful faster-whisper memory-saving option,
   **but it is not exposed by the current pipeline configuration**.
-  Transcription currently tries CUDA `float16`, then CPU `int8` after a
-  `RuntimeError` or `ValueError`. Do not add a compute-type environment override
-  expecting it to work; using that GPU precision requires a future code change.
+  Transcription tries CUDA `float16`, then CPU `int8` after a
+  `RuntimeError` or `ValueError`. Using that GPU precision requires a code change.
 
 Model/configuration changes do not invalidate cached transcription. Follow the
 [reset procedure](../README.md#reset-a-job) to retest from the beginning.
@@ -61,11 +59,9 @@ that host; Compose does not publish an Ollama host port by default.
 
 Connection, timeout, missing-model, or other request failures cause candidate
 review to return deterministic default cuts with reason `llm_unavailable`, not
-an automatic job failure. Inspect the job's `decisions.json` and pipeline logs.
-Invalid LLM answers also undergo validation and may fall back; LLM failure does
-not mean nothing will be cut. The report has a non-LLM summary fallback.
-This fallback does not fix unrelated orchestrator wiring errors in an
-unintegrated checkout.
+a job failure. Inspect the job's `decisions.json` and pipeline logs.
+Invalid LLM answers are validated and may fall back; LLM failure does not mean
+nothing will be cut. The report has a non-LLM summary fallback.
 
 ## File not picked up
 
@@ -151,9 +147,8 @@ timecode offset. Subsequent edits require subtitle retiming.
 
 Spot-check immediately before and after several cuts. Constant offset suggests
 an import/timeline-start issue; growing drift suggests a frame-rate or source
-timing problem; a jump after a cut suggests a remapping problem. Confirm the
-integration fixes pass kept ranges to subtitle remapping. Preserve the cut list,
-SRT, and source/edited timestamps when reporting a bug.
+timing problem; a jump after a cut suggests a remapping problem. Preserve the
+`<name>.cutlist.json`, SRT, and source/edited timestamps when reporting a bug.
 
 ## Resolve import problems or wrong frame rate
 
@@ -175,9 +170,8 @@ YouTube requires **at least three chapters**, **at least 10 seconds each**,
 and the first at **00:00**; the final chapter must also have 10 seconds of video.
 The report omits chapters when there is insufficient edited duration.
 `report.min_chapter_gap_s` can increase spacing but cannot bypass the 10-second
-floor. Confirm the report uses the integrated edited-time slide/transcript data,
-then paste only its timestamp/title block into the YouTube description. Retiming
-is necessary if you make further edits.
+floor. Paste only the report's timestamp/title block into the YouTube
+description. Retiming is necessary if you make further edits.
 
 ## Can I run CPU-only?
 
@@ -190,7 +184,7 @@ For a CPU-only deployment, adapt a local Compose copy by removing both services'
 GPU device reservation blocks (an empty override may not remove merged values).
 Alternatively run the installed Python requirements and FFmpeg natively, with
 writable path overrides and `python3 -m app.main process /path/to/video.mp4`.
-These deployment adaptations are unverified here.
+These deployment adaptations are unverified.
 
 Whisper attempts CUDA first and falls back to CPU `int8` on runtime/value errors;
 there is no supported `transcription.device` override to force CPU. Disabling

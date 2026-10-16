@@ -26,6 +26,15 @@ class CutList:
     original_duration: float
     edited_duration: float
 
+    @classmethod
+    def from_dict(cls, value):
+        return cls(
+            removed=[tuple(interval) for interval in value["removed"]],
+            keep=[tuple(interval) for interval in value["keep"]],
+            original_duration=value["original_duration"],
+            edited_duration=value["edited_duration"],
+        )
+
     def to_dict(self):
         return asdict(self)
 
@@ -47,8 +56,12 @@ def build_cutlist(candidates, decisions, duration, cfg):
     duration = _nonnegative(duration, "duration")
     cuts = _get(cfg, "cuts", {})
     default_target = _nonnegative(_get(cuts, "target_pause_s", 0.6), "target_pause_s")
-    full_min = _nonnegative(_get(cuts, "full_remove_min_s", 10), "full_remove_min_s")
-    decisions = decisions if isinstance(decisions, Mapping) else {}
+    full_min = _nonnegative(_get(cuts, "full_remove_min_s", 8.0), "full_remove_min_s")
+    if not isinstance(decisions, Mapping):
+        decisions = {
+            _get(decision, "candidate_id", _get(decision, "id")): decision
+            for decision in (decisions or [])
+        }
     removed = []
     for candidate in candidates:
         start = _nonnegative(_get(candidate, "start"), "candidate start")
@@ -96,7 +109,7 @@ def build_cutlist(candidates, decisions, duration, cfg):
     return CutList(merged, keep, duration, math.fsum(end - start for start, end in keep))
 
 
-def export_with_auto_editor(video, cutlist, out_dir, cfg):
+def export_with_auto_editor(video, cutlist, out_dir, cfg, name=None):
     """Write audit JSON and Resolve FCPXML; optionally render a preview MP4.
 
     Set ``cfg.export.preview`` to enable the preview. Return artifact paths.
@@ -105,8 +118,9 @@ def export_with_auto_editor(video, cutlist, out_dir, cfg):
     video = Path(video).resolve()
     out_dir = Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    audit = out_dir / f"{video.stem}.cutlist.json"
-    timeline = out_dir / f"{video.stem}.fcpxml"
+    stem = Path(name).name if name is not None else video.stem
+    audit = out_dir / f"{stem}.cutlist.json"
+    timeline = out_dir / f"{stem}.fcpxml"
     cutlist.to_json(audit)
     command = ["auto-editor", str(video), "--edit", "all"]
     if cutlist.removed:
@@ -118,7 +132,7 @@ def export_with_auto_editor(video, cutlist, out_dir, cfg):
     )
     artifacts = {"cutlist": audit, "resolve": timeline}
     if _get(_get(cfg, "export", {}), "preview", False):
-        preview = out_dir / f"{video.stem}.preview.mp4"
+        preview = out_dir / f"{stem}.preview.mp4"
         subprocess.run([*command, "--export", "default", "--output", str(preview)], check=True)
         artifacts["preview"] = preview
     return artifacts
