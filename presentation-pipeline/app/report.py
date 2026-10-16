@@ -42,7 +42,7 @@ def _text(text):
 
 def _title(boundary, segments):
     for segment in segments:
-        if float(_get(segment, "end", _get(segment, "start", 0))) < boundary:
+        if float(_get(segment, "end", _get(segment, "start", 0))) <= boundary:
             continue
         words = _get(segment, "words", [])
         text = (
