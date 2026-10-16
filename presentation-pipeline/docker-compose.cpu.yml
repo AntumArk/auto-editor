@@ -3,6 +3,7 @@ services:
     build: .
     restart: unless-stopped
     environment:
+      PIPELINE__DIARIZATION__ENABLED: "false"
       PIPELINE__LLM__ENABLED: "false"
       PIPELINE__TRANSCRIPTION__DEVICE: cpu
       PIPELINE__TRANSCRIPTION__MODEL: small

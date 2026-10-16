@@ -53,8 +53,10 @@ Unload/stop any already resident Ollama model before transcription. If memory
 is still tight, use CPU transcription/diarization, a smaller LLM, or disable LLM.
 Measure actual peak VRAM; fitting on 8 GB is a target, not a guarantee.
 
-For optional backend smoke tests, install `requirements-extra.txt` alongside
-`requirements.txt`, or use
+Diarization is local and enabled by default (the CPU-only Compose quick start
+opts out); no external inference APIs are used. Install
+`requirements-extra.txt` alongside `requirements.txt` for native runs. Docker
+includes the extras by default; rebuild explicitly with
 `docker compose build --build-arg INSTALL_TRANSCRIPTION_EXTRAS=true pipeline`.
 Check the host driver's compatibility with PyTorch's CUDA wheels. Accept Hugging
 Face terms for **both** `pyannote/speaker-diarization-3.1` and
@@ -83,7 +85,7 @@ yt-dlp -f "bv*+ba/b" <url>
 | Ingest | The file is picked up only after copying finishes; a job folder appears in `/data/work`; a restart does not reprocess it. |
 | Transcription | `transcript.json` has word timings; `clip.source.srt` reads correctly in LT/EN. |
 | Alignment (optional) | With `transcription.align: true`, compare word boundaries by listening. Lithuanian requires a vetted `align_model`; unsupported/missing models should warn and keep original timings. |
-| Diarization (optional) | With `diarization.enabled: true`, inspect segment/word `speaker` labels at speaker changes. Test `min_speakers`/`max_speakers`, CPU/CUDA, and optional SRT prefixes in both source and edited files. |
+| Diarization (enabled by default) | Inspect segment/word `speaker` labels at speaker changes. Test `min_speakers`/`max_speakers`, CPU/CUDA, and optional SRT prefixes in both source and edited files. Set `diarization.enabled: false` to opt out. |
 | Slide detection | Change times match real slide changes (spot-check about five); cursor movement is not counted. |
 | Cut candidates | Candidates occur only during silence on an unchanged slide; none cut into speech. |
 | LLM review | Output is valid JSON; with Ollama stopped, the run still completes with defaults (reason `llm_unavailable`). |

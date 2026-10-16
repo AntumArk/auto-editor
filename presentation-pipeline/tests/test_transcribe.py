@@ -13,6 +13,11 @@ from app.config import PipelineConfig
 from app.transcribe import _align_words, transcribe
 
 
+@pytest.fixture(autouse=True)
+def local_diarization_stub(monkeypatch):
+    monkeypatch.setattr("app.diarize.diarize", lambda path, segments, settings: segments)
+
+
 @pytest.mark.parametrize("device,compute,expected", [
     ("cpu", "auto", [("cpu", "int8")]),
     ("cuda", "auto", [("cuda", "int8_float16")]),
@@ -131,6 +136,22 @@ def test_transcription_options(tmp_path, monkeypatch):
     config.transcription.vad = False
     transcribe("video.mp4", config, tmp_path)
     assert model.transcribe.call_args.kwargs["vad_filter"] is False
+
+
+@pytest.mark.parametrize("disabled", [False, True])
+def test_local_diarization_enabled_by_default_can_be_disabled(tmp_path, monkeypatch, disabled):
+    model = Mock()
+    model.transcribe.return_value = ([], SimpleNamespace(language="lt", duration=1))
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(
+        WhisperModel=Mock(return_value=model),
+    ))
+    diarize = Mock(return_value=[])
+    monkeypatch.setattr("app.diarize.diarize", diarize)
+    config = PipelineConfig()
+    if disabled:
+        config.diarization.enabled = False
+    transcribe("video.mp4", config, tmp_path)
+    assert diarize.call_count == (0 if disabled else 1)
 
 
 def test_release_whisper_before_alignment_and_diarization(tmp_path, monkeypatch):

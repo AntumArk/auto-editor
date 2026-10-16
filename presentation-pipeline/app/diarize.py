@@ -60,6 +60,7 @@ def diarize(video_path, segments, settings):
         from pyannote.audio import Pipeline
         from pyannote.audio.core.task import Problem, Resolution, Specifications
         from torch.torch_version import TorchVersion
+        from faster_whisper.audio import decode_audio
     except ImportError as exc:
         raise RuntimeError(
             "Diarization requires requirements-extra.txt (pyannote.audio)."
@@ -82,7 +83,10 @@ def diarize(video_path, segments, settings):
             for name in ("min_speakers", "max_speakers")
             if setting(name) is not None
         }
-        annotation = pipeline(str(video_path), **options)
+        waveform = torch.from_numpy(
+            decode_audio(str(video_path), sampling_rate=16000)
+        ).unsqueeze(0)
+        annotation = pipeline({"waveform": waveform, "sample_rate": 16000}, **options)
         turns = [
             {"start": turn.start, "end": turn.end, "speaker": speaker}
             for turn, _, speaker in annotation.itertracks(yield_label=True)

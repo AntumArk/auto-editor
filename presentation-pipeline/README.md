@@ -68,6 +68,7 @@ export PIPELINE__PATHS__INBOX="$PWD/data/inbox"
 export PIPELINE__PATHS__OUTPUT="$PWD/data/output"
 export PIPELINE__PATHS__WORKDIR="$PWD/data/work"
 export PIPELINE__LLM__ENABLED=false
+export PIPELINE__DIARIZATION__ENABLED=false
 export PIPELINE__TRANSCRIPTION__DEVICE=cpu
 export PIPELINE__TRANSCRIPTION__MODEL=small
 export PIPELINE__TRANSCRIPTION__LANGUAGE=null
@@ -191,6 +192,15 @@ Normally keep the container paths unchanged.
 
 ## 3. Quick start
 
+Speaker diarization is enabled by default and runs **locally**, without external
+transcription/diarization APIs. Before starting, accept the model terms and
+export `HF_TOKEN` as described [below](#optional-alignment-and-speaker-labels).
+Model files download on first use; with cached models no external inference
+service is needed. After caching all models, set `HF_HUB_OFFLINE=1` to prevent
+Hugging Face network access (forward it explicitly in Docker).
+To skip this step, set `diarization.enabled: false`.
+The CPU-only quick start explicitly disables diarization.
+
 Run Compose commands from the pipeline directory of your checkout:
 
 ```sh
@@ -283,7 +293,7 @@ or explicitly add them to the Compose service environment.
 | `transcription.initial_prompt` | `null` | Optional glossary of names/technical terms in the talk. |
 | `transcription.align` | `false` | Refine word timestamps with optional WhisperX after releasing Whisper. Warn and retain original timings if unavailable or unsuccessful. |
 | `transcription.align_model` | `null` | Optional language-compatible alignment model ID/path; needed for languages without a WhisperX default, such as Lithuanian. |
-| `diarization.enabled` | `false` | Run optional `pyannote/speaker-diarization-3.1` after Whisper/alignment. An enabled but unavailable backend/token fails with an error. |
+| `diarization.enabled` | `true` | Run local `pyannote/speaker-diarization-3.1` after Whisper/alignment. An unavailable backend/token fails with an error; set `false` to opt out. |
 | `diarization.hf_token` | `HF_TOKEN` | **Environment variable name**, never the token value. |
 | `diarization.min_speakers` / `max_speakers` | `null` | Optional positive speaker-count bounds; otherwise let pyannote estimate. |
 | `diarization.device` | `cpu` | `cpu` or `cuda`; CPU saves VRAM at the cost of speed. |
@@ -332,19 +342,22 @@ Ollama's model. Use a smaller LLM or disable LLM review if necessary.
 
 ### Optional alignment and speaker labels
 
-Heavy dependencies are **not** installed by default. In the native venv:
+Diarization runs locally by default; alignment remains disabled. Native users
+enabling diarization need the separate heavy dependency set in their venv:
 
 ```sh
 python3 -m pip install -r requirements.txt -r requirements-extra.txt
 ```
 
-For Docker, rebuild the pipeline image with the opt-in build argument:
+Docker installs these extras by default. To rebuild explicitly:
 
 ```sh
 docker compose build --build-arg INSTALL_TRANSCRIPTION_EXTRAS=true pipeline
 ```
 
 The extras include PyTorch and substantially enlarge installation/model caches.
+To omit them, build with `INSTALL_TRANSCRIPTION_EXTRAS=false` and disable
+diarization with `PIPELINE__DIARIZATION__ENABLED=false`.
 Check the NVIDIA driver's compatibility with the installed PyTorch CUDA wheels,
 not only the base image. First use downloads models and requires network access.
 The optional pins use pyannote.audio 3.x for the requested 3.1 checkpoint; do not
@@ -370,12 +383,13 @@ python3 -m app.main process /path/to/presentation.mp4 --keep-source
 unset HF_TOKEN
 ```
 
+The default GPU Compose service forwards `HF_TOKEN` from the host environment.
 For a one-off Docker run, stop the watcher first and pass the environment
 explicitly with `docker compose run --rm -e HF_TOKEN
 -e PIPELINE__DIARIZATION__ENABLED=true -e PIPELINE__DIARIZATION__SPEAKER_PREFIX=true
 pipeline python3 -m app.main process /data/inbox/presentation.mp4 --keep-source`.
-For the watcher, explicitly forward these variables in the Compose service's
-`environment` mapping; host exports alone are not forwarded.
+For the watcher, explicitly forward other configuration overrides in the Compose
+service's `environment` mapping; host exports alone are not forwarded.
 
 `transcript.json` stores speaker labels on segments and words, independently
 assigned to the speaker with the greatest **total** overlapping time.

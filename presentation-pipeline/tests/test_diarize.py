@@ -77,9 +77,17 @@ def test_diarization_lazy_backend_and_environment_token(monkeypatch):
     ))
     cache = Mock()
     safe_globals = Mock(return_value=nullcontext())
+    waveform = object()
+    tensor = Mock()
+    tensor.unsqueeze.return_value = waveform
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(
         device=lambda value: value, cuda=SimpleNamespace(empty_cache=cache),
         serialization=SimpleNamespace(safe_globals=safe_globals),
+        from_numpy=Mock(return_value=tensor),
+    ))
+    decode_audio = Mock(return_value=object())
+    monkeypatch.setitem(sys.modules, "faster_whisper.audio", SimpleNamespace(
+        decode_audio=decode_audio,
     ))
     result = diarize("video.mp4", [{"start": 0, "end": 1}], DiarizationConfig(
         hf_token="TEST_HF_TOKEN", device="cuda", min_speakers=1, max_speakers=3,
@@ -88,7 +96,11 @@ def test_diarization_lazy_backend_and_environment_token(monkeypatch):
         "pyannote/speaker-diarization-3.1", use_auth_token="test-only-placeholder",
     )
     pipeline.to.assert_called_once_with("cuda")
-    pipeline.assert_called_once_with("video.mp4", min_speakers=1, max_speakers=3)
+    decode_audio.assert_called_once_with("video.mp4", sampling_rate=16000)
+    tensor.unsqueeze.assert_called_once_with(0)
+    pipeline.assert_called_once_with(
+        {"waveform": waveform, "sample_rate": 16000}, min_speakers=1, max_speakers=3,
+    )
     assert result[0]["speaker"] == "SPEAKER_00"
     cache.assert_called_once()
     safe_globals.assert_called_once_with([str, dict, int, str])

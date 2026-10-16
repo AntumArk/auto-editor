@@ -5,6 +5,7 @@ services:
     depends_on:
       - ollama
     environment:
+      HF_TOKEN: ${HF_TOKEN:-}
       PIPELINE__LLM__URL: http://ollama:11434
       PIPELINE__PATHS__INBOX: /data/inbox
       PIPELINE__PATHS__OUTPUT: /data/output

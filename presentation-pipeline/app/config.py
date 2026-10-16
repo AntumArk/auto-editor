@@ -39,7 +39,7 @@ class TranscriptionConfig:
 
 @dataclass
 class DiarizationConfig:
-    enabled: bool = False
+    enabled: bool = True
     hf_token: str = "HF_TOKEN"
     min_speakers: int | None = None
     max_speakers: int | None = None

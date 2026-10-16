@@ -145,7 +145,7 @@ def transcribe(video_path, cfg, out_dir) -> dict:
     if _setting(settings, "align", False):
         result = _align_words(video_path, result, settings, target)
     diarization = _setting(cfg, "diarization", {})
-    if _setting(diarization, "enabled", False):
+    if _setting(diarization, "enabled", True):
         from .diarize import diarize
 
         result["segments"] = diarize(video_path, result["segments"], diarization)

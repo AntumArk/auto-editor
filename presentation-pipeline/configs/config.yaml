@@ -20,7 +20,7 @@ transcription:
   align_model: null
 
 diarization:
-  enabled: false
+  enabled: true
   hf_token: HF_TOKEN
   min_speakers: null
   max_speakers: null

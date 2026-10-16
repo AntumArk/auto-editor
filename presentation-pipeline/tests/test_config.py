@@ -22,7 +22,7 @@ def test_loads_default_config():
     assert config.transcription.vad_parameters is None
     assert config.transcription.align is False
     assert config.transcription.align_model is None
-    assert config.diarization.enabled is False
+    assert config.diarization.enabled is True
     assert config.diarization.hf_token == "HF_TOKEN"
     assert config.diarization.device == "cpu"
     assert config.diarization.speaker_prefix is False
