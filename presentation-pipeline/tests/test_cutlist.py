@@ -41,6 +41,28 @@ class CutListTests(unittest.TestCase):
                 result = build_cutlist([candidate()], decisions, 10, config())
                 self.assertEqual(bool(result.removed), "pause" not in decisions)
 
+    def test_decisions_list_accepts_candidate_id_or_id_on_dicts_and_objects(self):
+        for key in ("candidate_id", "id"):
+            for decision in ({"action": "keep", key: "pause"},
+                             SimpleNamespace(action="keep", **{key: "pause"})):
+                with self.subTest(decision=decision):
+                    result = build_cutlist([candidate()], [decision], 10, config())
+                    self.assertEqual(result.removed, [])
+                    self.assertEqual(result.keep, [(0, 10)])
+
+    def test_default_full_removal_threshold_matches_config(self):
+        result = build_cutlist(
+            [candidate(end=10)], {"pause": {"action": "approve"}}, 12, {},
+        )
+        self.assertEqual(result.removed, [(2, 10)])
+
+    def test_cutlist_json_round_trip_restores_tuple_intervals(self):
+        result = build_cutlist([candidate()], {}, 10, config())
+        restored = CutList.from_dict(json.loads(result.to_json()))
+        self.assertEqual(restored, result)
+        self.assertIsInstance(restored.keep[0], tuple)
+        self.assertIsInstance(restored.removed[0], tuple)
+
     def test_full_removal_requires_approval_and_minimum_length(self):
         for action, end, expected in (
             ("approve", 10, [(2.0, 10.0)]),
@@ -121,6 +143,22 @@ class CutListTests(unittest.TestCase):
 
 
 class ExportTests(unittest.TestCase):
+    @patch("cutlist.subprocess.run")
+    def test_original_stem_names_all_exports(self, run):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = export_with_auto_editor(
+                Path(directory) / "source.mp4", build_cutlist([], {}, 10, {}),
+                directory, {"export": {"preview": True}}, name="Original talk",
+            )
+            self.assertEqual(
+                {path.name for path in artifacts.values()},
+                {"Original talk.cutlist.json", "Original talk.fcpxml", "Original talk.preview.mp4"},
+            )
+            self.assertEqual(
+                [Path(call.args[0][-1]).name for call in run.call_args_list],
+                ["Original talk.fcpxml", "Original talk.preview.mp4"],
+            )
+
     @patch("cutlist.subprocess.run")
     def test_resolve_and_preview_use_same_explicit_second_cuts(self, run):
         result = build_cutlist([candidate()], {}, 10, config())

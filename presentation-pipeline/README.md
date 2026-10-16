@@ -41,7 +41,15 @@ Each job writes its Resolve timeline/export and the following review assets to
 
 - `<name>.source.srt` and `<name>.edited.srt`
 - `<name>.report.md`
-- An auditable `cutlist.json`
+- `<name>.fcpxml` (Resolve timeline)
+- `<name>.cutlist.json` (the single output audit file)
+- `<name>.preview.mp4` (when preview export is enabled)
+
+`<name>` is the original input file stem, not the working copy's `source` name.
+Stage JSON files remain cached separately in the job's work directory.
+
+For CPU-only tests without GPU models or network services, install
+`requirements-test.txt` and run `pytest` from `presentation-pipeline/`.
 
 The pipeline modules for transcription, visual analysis, candidate generation,
 LLM review, cut-list export, subtitles, and reporting are loaded only when
