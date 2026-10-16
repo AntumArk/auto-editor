@@ -1,4 +1,5 @@
 import io
+import json
 from pathlib import Path
 import re
 import sys
@@ -27,6 +28,8 @@ def ui(tmp_path, monkeypatch):
         state = JobState.load(imported.job_dir / "state.json")
         for stage in STAGES[1:]:
             state.mark_stage(stage)
+        state.artifacts["cut_exported"] = True
+        state.save()
         output = Path(settings.paths.output) / imported.job_id
         output.mkdir()
         for suffix in web.OUTPUT_SUFFIXES:
@@ -142,8 +145,9 @@ def test_single_worker_queues_jobs_and_deduplicates_active_source(ui):
         assert first.location == duplicate.location
         assert run.call_count == 1
         assert "queued" in client.get(second.location).text
-        assert 'http-equiv="refresh" content="5"' in client.get(second.location).text
-        assert 'http-equiv="refresh" content="5"' in client.get(first.location).text
+        assert client.get(second.location + "/status").json["status"] == "queued"
+        assert client.get(first.location + "/status").json["status"] == "running"
+        assert 'data-status-url=' in client.get(first.location).text
     finally:
         release.set()
     drain(app)
@@ -179,6 +183,146 @@ def test_upload_size_limit(ui):
     app.config["MAX_CONTENT_LENGTH"] = 128
     assert upload(client, token).status_code == 413
     assert run.call_count == 0
+
+
+def test_settings_saved_changed_settings_create_separate_job_and_rerun_preserves_source(ui):
+    config, app, client, token, run = ui
+    response = upload(client, token, **{
+        "cuts.target_pause_s": "1.5", "export.preview": "on",
+        "visual.sample_fps": "2", "report.language": "en",
+    })
+    drain(app)
+    imported, settings = run.call_args.args
+    assert settings.cuts.target_pause_s == 1.5
+    assert settings.export.preview is True
+    assert settings.visual.sample_fps == 2
+    state = JobState.load(imported.job_dir / "state.json")
+    assert state.artifacts["settings"]["report"]["language"] == "en"
+    assert "url" not in state.artifacts["settings"]["llm"]
+    changed = client.post(response.location + "/rerun", data={
+        "token": token, "cuts.target_pause_s": "2",
+    })
+    assert changed.status_code == 303
+    assert changed.location != response.location
+    drain(app)
+    new_imported, new_settings = run.call_args.args
+    assert new_imported.original_name == "talk.mp4"
+    assert new_settings.cuts.target_pause_s == 2
+    assert new_settings.report.language == "en"
+    assert imported.video_path.is_file()
+    assert JobState.load(imported.job_dir / "state.json").artifacts["settings"]["cuts"]["target_pause_s"] == 1.5
+    again = client.post(changed.location + "/rerun", data={
+        "token": token, "cuts.target_pause_s": "2",
+    })
+    drain(app)
+    assert again.location == changed.location
+    assert run.call_count == 2
+
+
+def test_source_and_preview_range_requests_and_mime(ui):
+    _, app, client, token, run = ui
+    response = upload(client, token)
+    drain(app)
+    source = client.get(response.location + "/source", headers={"Range": "bytes=0-9"})
+    assert source.status_code == 206
+    assert source.data == b"videovideo"
+    assert source.mimetype == "video/mp4"
+    preview = client.get(response.location + "/media/talk.preview.mp4",
+                         headers={"Range": "bytes=0-5"})
+    assert preview.status_code == 206
+    assert preview.mimetype == "video/mp4"
+    assert len(preview.data) == 6
+    assert client.get(response.location + "/media/talk.report.md").status_code == 404
+    assert client.get(response.location + "/media/unknown.preview.mp4").status_code == 404
+    assert "media-src 'self'" in preview.headers["Content-Security-Policy"]
+
+
+def test_preview_render_uses_cached_cutlist_and_does_not_reprocess(ui, monkeypatch):
+    from app import cutlist
+
+    _, app, client, token, run = ui
+    response = upload(client, token)
+    drain(app)
+    imported, _ = run.call_args.args
+    (imported.job_dir / "cutlist.json").write_text(json.dumps({
+        "removed": [[2, 4]], "keep": [[0, 2], [4, 10]],
+        "original_duration": 10, "edited_duration": 8,
+    }))
+    render = Mock(return_value=None)
+    monkeypatch.setattr(cutlist, "render_preview", render)
+    assert client.post(response.location + "/preview", data={"token": "wrong"}).status_code == 403
+    assert client.post(response.location + "/preview", data={"token": token}).status_code == 303
+    drain(app)
+    assert run.call_count == 1
+    assert render.call_args.args[0] == imported.video_path
+    assert render.call_args.args[1].removed == [(2, 4)]
+    assert render.call_args.kwargs["name"] == "talk"
+    assert client.get(response.location + "/status").json["preview"]["status"] == "done"
+    render.side_effect = RuntimeError("<bad preview>")
+    client.post(response.location + "/preview", data={"token": token})
+    drain(app)
+    page = client.get(response.location)
+    assert "&lt;bad preview&gt;" in page.text
+    assert client.get(response.location + "/status").json["preview"]["status"] == "failed"
+    assert client.get(response.location + "/media/talk.preview.mp4").status_code == 404
+
+
+def test_review_displays_cached_decisions_and_escaped_reasons(ui):
+    _, app, client, token, run = ui
+    response = upload(client, token)
+    drain(app)
+    imported, _ = run.call_args.args
+    (imported.job_dir / "candidates.json").write_text(json.dumps([
+        {"id": "one", "start": 1, "end": 5, "duration": 4, "context": {}},
+    ]))
+    (imported.job_dir / "decisions.json").write_text(json.dumps([
+        {"candidate_id": "one", "action": "keep", "target_pause_s": None,
+         "reason": "<img src=x onerror=alert(1)>", "needs_review": True},
+    ]))
+    (imported.job_dir / "cutlist.json").write_text(json.dumps({
+        "original_duration": 10, "edited_duration": 10, "removed": [], "keep": [[0, 10]],
+    }))
+    page = client.get(response.location)
+    assert page.status_code == 200
+    assert "Needs review" in page.text
+    assert "&lt;img src=x" in page.text
+    assert "<img src=x" not in page.text
+    assert 'data-seek="1"' in page.text
+    assert 'id="cut-overview"' in page.text
+
+
+def test_new_routes_cannot_escape_roots_and_require_csrf(ui, tmp_path):
+    config, app, client, token, run = ui
+    response = upload(client, token)
+    drain(app)
+    imported, _ = run.call_args.args
+    for action in ("rerun", "resume", "preview"):
+        assert client.post(response.location + "/" + action, data={"token": "wrong"}).status_code == 403
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"private")
+    imported.video_path.unlink()
+    imported.video_path.symlink_to(outside)
+    assert client.get(response.location + "/source").status_code == 404
+    assert client.post(response.location + "/rerun", data={"token": token}).status_code == 404
+    output = Path(config.paths.output) / imported.job_id / "talk.preview.mp4"
+    output.unlink()
+    output.symlink_to(outside)
+    assert client.get(response.location + "/media/talk.preview.mp4").status_code == 404
+
+
+def test_retry_failed_job_restores_settings(ui):
+    _, app, client, token, run = ui
+    original = run.side_effect
+    run.side_effect = RuntimeError("temporary failure")
+    response = upload(client, token, **{"cuts.target_pause_s": "1.75"})
+    drain(app)
+    assert "Retry from saved stage" in client.get(response.location).text
+    run.side_effect = original
+    assert client.post(response.location + "/resume", data={"token": token}).status_code == 303
+    drain(app)
+    assert run.call_count == 2
+    assert run.call_args.args[1].cuts.target_pause_s == 1.75
+    assert client.get(response.location + "/status").json["status"] == "done"
 
 
 def test_upload_extensions_follow_watcher_config(ui):
@@ -233,7 +377,7 @@ def test_restart_marks_incomplete_web_jobs_failed(tmp_path):
     try:
         restored = JobState.load(state.path)
         assert restored.status == "failed"
-        assert "Resubmit" in restored.error
+        assert "Retry from the saved stage" in restored.error
     finally:
         app.extensions["pipeline_worker"].executor.shutdown(wait=True)
 

@@ -29,12 +29,19 @@ def ingest(
     source: str | Path,
     config: PipelineConfig,
     move: bool = True,
+    settings_key: str | None = None,
+    original_name: str | None = None,
 ) -> IngestedFile:
     source_path = Path(source).resolve()
     if not source_path.is_file():
         raise FileNotFoundError(source_path)
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", source_path.stem).strip(".-_") or "video"
+    name = original_name or source_path.name
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(name).stem).strip(".-_") or "video"
     job_id = f"{slug}-{_content_hash(source_path)[:12]}"
+    if settings_key is not None:
+        if not re.fullmatch(r"[a-f0-9]{12}", settings_key):
+            raise ValueError("Invalid settings key")
+        job_id += f"-{settings_key}"
     job_dir = Path(config.paths.workdir) / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     destination = job_dir / f"source{source_path.suffix.lower()}"
@@ -46,4 +53,4 @@ def ingest(
             shutil.copy2(source_path, destination)
     elif move and source_path != destination.resolve():
         source_path.unlink()
-    return IngestedFile(job_id, destination, job_dir, source_path.name)
+    return IngestedFile(job_id, destination, job_dir, name)

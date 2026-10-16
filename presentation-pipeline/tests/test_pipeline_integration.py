@@ -4,7 +4,6 @@ import json
 import subprocess
 from pathlib import Path
 import sys
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -26,7 +25,7 @@ def pipeline(tmp_path, monkeypatch):
     config.cuts.speech_margin_s = 0
     config.cuts.settle_after_slide_change_s = 0
     config.cuts.target_pause_s = 2
-    config.export = SimpleNamespace(preview=True)
+    config.export.preview = True
     source = tmp_path / "Original talk.mp4"
     source.write_bytes(b"mock video input")
     transcript = {"segments": [
@@ -157,6 +156,24 @@ def test_report_discards_slide_changes_inside_removed_ranges(pipeline, monkeypat
     )))
     main.process_file(source, config, move=False)
     assert mocks["make_chapters"].call_args.args[0] == [0, 45]
+
+
+def test_core_resume_honors_saved_web_settings_without_replacing_paths(pipeline):
+    config, source, mocks = pipeline
+    imported = ingest(source, config, move=False)
+    state = JobState.create(imported.job_id, imported.job_dir, str(imported.video_path))
+    state.artifacts["settings"] = {
+        "cuts": {"target_pause_s": 3},
+        "paths": {"output": "/must-not-use"},
+        "llm": {"url": "http://must-not-use"},
+    }
+    state.save()
+    output = main._process_job(imported, config)
+    assert output == Path(config.paths.output) / imported.job_id
+    received = mocks["build_cutlist"].call_args.args[3]
+    assert received.cuts.target_pause_s == 3
+    assert received.llm.url == config.llm.url
+    assert config.cuts.target_pause_s == 2
 
 
 @pytest.mark.parametrize("flag", ["--keep-source", "--copy", None])

@@ -117,6 +117,33 @@ def _run_auto_editor(command):
         raise RuntimeError(f"auto-editor export failed (exit {exc.returncode}): {detail}") from exc
 
 
+def _edit_command(video, cutlist):
+    command = ["auto-editor", str(Path(video).resolve()), "--edit", "none"]
+    if cutlist.removed:
+        command.append("--cut-out")
+        # Bare numbers mean frames in this CLI, so always include seconds units.
+        command.extend(f"{start:.9f}sec,{end:.9f}sec" for start, end in cutlist.removed)
+    return command
+
+
+def render_preview(video, cutlist, out_dir, name=None):
+    """Render a browser-compatible preview using the same explicit cut ranges."""
+    output = Path(out_dir).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    stem = Path(name).name if name is not None else Path(video).stem
+    preview = output / f"{stem}.preview.mp4"
+    try:
+        _run_auto_editor([
+            *_edit_command(video, cutlist), "--export", "default",
+            "--video-codec", "libx264", "--audio-codec", "aac", "--no-open",
+            "--output", str(preview),
+        ])
+    except (RuntimeError, OSError):
+        preview.unlink(missing_ok=True)
+        raise
+    return preview
+
+
 def export_with_auto_editor(video, cutlist, out_dir, cfg, name=None):
     """Write audit JSON and Resolve FCPXML; optionally render a preview MP4.
 
@@ -130,17 +157,11 @@ def export_with_auto_editor(video, cutlist, out_dir, cfg, name=None):
     audit = out_dir / f"{stem}.cutlist.json"
     timeline = out_dir / f"{stem}.fcpxml"
     cutlist.to_json(audit)
-    command = ["auto-editor", str(video), "--edit", "none"]
-    if cutlist.removed:
-        command.append("--cut-out")
-        # Bare numbers mean frames in this CLI, so always include seconds units.
-        command.extend(f"{start:.9f}sec,{end:.9f}sec" for start, end in cutlist.removed)
+    command = _edit_command(video, cutlist)
     _run_auto_editor(
         [*command, "--export", "resolve", "--output", str(timeline)],
     )
     artifacts = {"cutlist": audit, "resolve": timeline}
     if _get(_get(cfg, "export", {}), "preview", False):
-        preview = out_dir / f"{stem}.preview.mp4"
-        _run_auto_editor([*command, "--export", "default", "--output", str(preview)])
-        artifacts["preview"] = preview
+        artifacts["preview"] = render_preview(video, cutlist, out_dir, name=stem)
     return artifacts

@@ -1,35 +1,122 @@
-<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-{% if state.status in ('queued', 'running') and state.stage != 'done' %}
-<meta http-equiv="refresh" content="5">
-{% endif %}
-<title>{{ state.original_name }} — Presentation pipeline</title>
-<p><a href="{{ url_for('jobs') }}">Upload / all jobs</a></p>
-<h1>{{ state.original_name }}</h1>
-<p>Job: {{ state.job_id }}</p>
-<p>Status: {{ 'done' if state.stage == 'done' else state.status }}</p>
-<p>Last completed stage: {{ state.stage }} ({{ completed }}/{{ stages|length }})</p>
-<progress value="{{ completed }}" max="{{ stages|length }}">{{ completed }}/{{ stages|length }}</progress>
-<ol>
-{% for stage in stages %}
-  <li>{{ stage }}{% if loop.index <= completed %} — complete{% endif %}</li>
-{% endfor %}
-</ol>
-{% if state.error %}<p>Error: {{ state.error }}</p>{% endif %}
-{% if state.status in ('queued', 'running') and state.stage != 'done' %}
-<p>This page updates every 5 seconds. A stage is marked complete only after it finishes.
-The first transcription may also download the model.</p>
-{% endif %}
-<h2>Outputs</h2>
-<ul>
-{% for filename in files %}
-  <li><a href="{{ url_for('download', job_id=state.job_dir.name, filename=filename) }}">{{ filename }}</a></li>
-{% endfor %}
-</ul>
-{% if report %}
-<h2>Report</h2>
-{{ report }}
-{% endif %}
-</html>
+{% extends "base.html" %}
+{% block title %}{{ state.original_name }} - Presentation studio{% endblock %}
+{% block content %}
+<div id="job-status" data-status-url="{{ url_for('status', job_id=state.job_id) }}"
+     data-snapshot="{{ {'stage': state.stage, 'status': state.status, 'error': state.error, 'preview': preview, 'files': files}|tojson|forceescape }}">
+  <section class="page-heading">
+    <div><a href="{{ url_for('jobs') }}">All edits</a><h1>{{ state.original_name }}</h1>
+    <p class="job-id">Job: {{ state.job_id }}</p></div>
+    <span class="badge">{{ 'done' if state.stage == 'done' else state.status }}</span>
+  </section>
+  <p id="update-notice" class="notice" hidden>New progress is available. <a href="">Refresh when ready</a>.</p>
+  <p id="poll-error" class="error" role="alert" hidden></p>
+  {% if state.error %}<p class="error" role="alert">Error: {{ state.error }}</p>{% endif %}
+  <div class="workspace review-workspace">
+  <div>
+    <section class="panel">
+      <div class="section-heading"><h2>Preview</h2><span class="hint">Source / edited</span></div>
+      <div class="players">
+        <div><h3>Source</h3>
+          <video id="source-player" controls preload="metadata" src="{{ url_for('source_video', job_id=state.job_id) }}"></video>
+          <p class="hint">Original file. If your browser cannot decode it, <a href="{{ url_for('source_video', job_id=state.job_id) }}">open or save the source</a>.</p>
+        </div>
+        <div><h3>Edited</h3>
+          {% if previews %}
+          <video controls preload="metadata" src="{{ url_for('media', job_id=state.job_id, filename=previews[0]) }}"></video>
+          {% else %}
+          <div class="empty preview-empty"><p>No edited preview yet.</p>
+            <p>Rendering an MP4 uses the approved cutlist, without rerunning transcription.</p></div>
+          {% endif %}
+          {% if preview.status in ('queued', 'running') %}
+          <p class="notice">Preview {{ preview.status }}. This can take time on CPU.</p>
+          {% elif state.stage == 'done' %}
+          {% if preview.error %}<p class="error">Preview error: {{ preview.error }}</p>{% endif %}
+          <form action="{{ url_for('preview', job_id=state.job_id) }}" method="post">
+            <input type="hidden" name="token" value="{{ token }}">
+            <button type="submit">{{ 'Render again' if previews else 'Render edited preview' }}</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% if cuts %}
+      <div class="stats">
+        <div><small>Source</small><strong>{{ "%.2f"|format(cuts.original_duration) }} s</strong></div>
+        <div><small>Edited</small><strong>{{ "%.2f"|format(cuts.edited_duration) }} s</strong></div>
+        <div><small>Removed</small><strong>{{ "%.2f"|format(cuts.original_duration - cuts.edited_duration) }} s</strong></div>
+        <div><small>Cuts</small><strong>{{ cuts.removed|length }}</strong></div>
+      </div>
+      <h3>Source-time cut overview</h3>
+      <canvas id="cut-overview" height="48" data-cuts="{{ cuts|tojson|forceescape }}" aria-label="Source timeline: retained and removed intervals">
+        See removed intervals below.
+      </canvas>
+      <p class="hint">Teal: retained / red: removed. Click the overview to seek the source.
+      This is a read-only cut overview, not a manual timeline editor.</p>
+      {% endif %}
+    </section>
+    <section class="panel">
+      <h2>Cut review</h2>
+      {% for warning in review_warnings %}<p class="notice">{{ warning }}</p>{% endfor %}
+      {% if reviews %}
+      <div class="table-scroll"><table>
+        <thead><tr><th>Source interval</th><th>Decision</th><th>Reason</th></tr></thead>
+        <tbody>{% for row in reviews %}
+          <tr><td><button type="button" class="seek" data-seek="{{ row.candidate.start }}">
+            {{ "%.2f"|format(row.candidate.start) }} - {{ "%.2f"|format(row.candidate.end) }} s</button></td>
+            <td>{% if row.decision %}{{ row.decision.action }}
+              {% if row.decision.target_pause_s is not none %}<small>Retain {{ row.decision.target_pause_s }} s</small>{% endif %}
+              {% if row.decision.needs_review %}<span class="badge">Needs review</span>{% endif %}
+            {% else %}Pending{% endif %}</td>
+            <td>{{ row.decision.reason if row.decision else 'Waiting for review' }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+      {% else %}<p class="hint">No pause candidates{% if not state.is_complete('candidates') %} yet{% endif %}.</p>{% endif %}
+      {% if cuts %}
+      <details><summary>Exact removed intervals</summary>
+        <ul>{% for start, end in cuts.removed %}
+          <li><button type="button" class="seek" data-seek="{{ start }}">{{ "%.2f"|format(start) }} - {{ "%.2f"|format(end) }} s</button></li>
+        {% else %}<li>Nothing removed.</li>{% endfor %}</ul>
+      </details>
+      {% endif %}
+    </section>
+    {% if report %}<section class="panel report"><h2>Report</h2>{{ report }}</section>{% endif %}
+  </div>
+  <aside>
+    <section class="panel">
+      <h2>Progress</h2>
+      <p>Status: {{ 'done' if state.stage == 'done' else state.status }}</p>
+      <p>Last completed stage: {{ state.stage }} ({{ completed }}/{{ stages|length }})</p>
+      <progress value="{{ completed }}" max="{{ stages|length }}">{{ completed }}/{{ stages|length }}</progress>
+      <ol class="stages">{% for stage in stages %}
+        <li>{{ stage }}{% if loop.index <= completed %} - complete{% endif %}</li>
+      {% endfor %}</ol>
+      <p class="hint">Progress checks every 5 seconds without interrupting playback or settings changes.
+      Stages update only when complete; the initial transcription may download a model.</p>
+      {% if state.status == 'failed' and state.stage != 'done' %}
+      <form action="{{ url_for('resume', job_id=state.job_id) }}" method="post">
+        <input type="hidden" name="token" value="{{ token }}"><button type="submit">Retry from saved stage</button>
+      </form>
+      {% endif %}
+    </section>
+    <section class="panel">
+      <h2>Outputs</h2>
+      <ul class="downloads">{% for filename in files %}
+        <li><a href="{{ url_for('download', job_id=state.job_id, filename=filename) }}">{{ filename }}</a></li>
+      {% else %}<li>Outputs appear as stages finish.</li>{% endfor %}</ul>
+    </section>
+    <section class="panel">
+      <h2>Job settings</h2>
+      {% if not saved_settings %}
+      <p class="notice">This older job has no saved settings. The form shows current server defaults, not necessarily the settings used for this result.</p>
+      {% endif %}
+      <p class="hint">Change settings and queue a separate run. The current results remain untouched.
+      Identical settings reuse the corresponding run. Transcription may run again for a new edit.</p>
+      <form action="{{ url_for('rerun', job_id=state.job_id) }}" method="post" data-settings-form>
+        <input type="hidden" name="token" value="{{ token }}">
+        {% include "settings.html" %}
+        <button class="primary" type="submit">Queue with these settings</button>
+      </form>
+    </section>
+  </aside>
+  </div>
+</div>
+{% endblock %}

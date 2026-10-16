@@ -35,6 +35,9 @@ report:
   language: lt
   min_chapter_gap_s: 10
 
+export:
+  preview: false
+
 watcher:
   poll_interval_s: 5
   stable_checks: 2

@@ -18,8 +18,8 @@ Each job has a JSON state file and cached stage artifacts under
 
 The image uses Ubuntu 24.04 (glibc 2.39) and verifies `auto-editor --version`
 during the build. Older Ubuntu 22.04 images fail at export with
-`GLIBC_2.38 not found`. Rebuild the image and resubmit the same source to resume
-from cached stages; there is no need to transcribe it again.
+`GLIBC_2.38 not found`. Rebuild the image and use **Retry from saved stage** on
+the existing job; there is no need to transcribe it again.
 Exports use `--edit none` plus the pipeline's explicit cut ranges: `--edit all`
 would remove the entire source and fail with an empty timeline.
 
@@ -99,24 +99,52 @@ venv active so it is on `PATH`. Open <http://127.0.0.1:8000>.
 Upload a video (maximum **16 GiB**) or submit a file path **inside the configured
 inbox only**. For Docker, a path means `/data/inbox/presentation.mp4`, not an
 arbitrary host path. The server keeps the source file in the inbox rather than
-moving it. Choose a Whisper model (`tiny`, `base`, `small`, `medium`, or
-`large-v3`), language (leave blank for automatic detection, or enter a code such
-as `en`/`lt`), and whether
-to use LLM review. Enabling LLM requires a reachable, configured Ollama service
-with its model already pulled; the CPU Compose file does not provide one.
+moving it. The grouped settings expose every supported per-job control:
 
-One worker processes jobs sequentially. The job list shows status and the last
-completed stage; errors appear on the job detail page. **Refresh manually** for
-updates. Completed jobs expose output download links and a rendered Markdown
-report with raw HTML escaped. Settings apply only to newly submitted jobs;
-completed stages are cached by source name/content, so changing settings does
-not recompute an existing job.
-See [Reset a job](#reset-a-job) when you need a fresh run.
+- **Transcription:** Whisper model, language (blank for automatic detection),
+  device, compute precision, transcribe/translate task, VAD, and word timestamps.
+  Whisper's translate task produces English, not arbitrary target languages.
+- **Slide detection:** sampling rate, change threshold, and analysis width.
+- **Pause/cut rules:** minimum silence, retained pause, speech padding, slide
+  settling time, and minimum length for approved full removal.
+- **LLM review:** enabled state, model, and request timeout. Enabling it requires
+  a reachable, configured Ollama service with its model already pulled; the CPU
+  Compose file does not provide one.
+- **Report:** summary language and minimum chapter gap. Both source/edited SRT
+  subtitles, the Resolve timeline, cutlist JSON, and report are always generated.
+- **Export:** optional edited MP4 preview (`export.preview` in YAML, or
+  `PIPELINE__EXPORT__PREVIEW=true`). Rendering takes additional CPU time.
+
+Server paths, watcher settings, and LLM service addresses remain in server
+configuration rather than the per-job form. Speaker diarization is not implemented.
+
+One worker processes edits and preview renders sequentially. Open a job to play
+the source, review a source-time cut overview and candidate decisions/reasons,
+download outputs, and read the escaped Markdown report. Click a candidate or the
+overview to seek the source. The overview is read-only, not a manual timeline editor.
+Source playback depends on browser codec support; edited previews use H.264/AAC MP4.
+**Render edited preview** works on completed jobs, including older jobs, using the
+cached cutlist without rerunning transcription. Preview failures are shown with
+a retry action. Video endpoints support HTTP range requests for seeking.
+
+Job progress checks every five seconds; playback and edited settings prevent an
+automatic page reload and show a refresh notice instead. The job list still
+requires manual refresh. Failed processing can be retried from its last saved stage.
+New web jobs save their editable settings in job state and include a settings
+fingerprint in their ID: identical source/name/settings reuse a run; changing
+settings queues a separate run and preserves the previous outputs. Use the job's
+settings form to rerun its stored source without uploading again. New runs may
+repeat transcription. Older jobs have no saved settings and explicitly show that
+the form uses current server defaults. CLI/watcher job IDs remain source-based.
+
+This is an original local interface, not the proprietary online app. The upstream
+[README](https://github.com/WyattBlue/auto-editor#run-online-and-as-an-application)
+distinguishes its public CLI source from the app's proprietary unique assets.
 
 Run **one server instance per work directory**, and do not run a watcher or
 manual processor against the same work directory concurrently. Queued jobs are
-not automatically restarted after a server restart: resubmit them to reuse
-persisted stages.
+not automatically restarted after a server restart: use **Retry from saved
+stage** to reuse persisted stages and saved per-job settings.
 
 Native `serve` binds to loopback by default. The CPU container listens on
 `0.0.0.0` internally, but publishes only `127.0.0.1:8000:8000` on the host.
@@ -307,6 +335,7 @@ or explicitly add them to the Compose service environment.
 | `llm.timeout_s` | `120` | Candidate-review request timeout in seconds; report summarization uses its own 30-second timeout. |
 | `report.language` | `lt` | Requested LLM summary language; deterministic fallback is not guaranteed to be localized. |
 | `report.min_chapter_gap_s` | `10` | Desired chapter spacing; YouTube's 10-second minimum still applies. |
+| `export.preview` | `false` | Render an H.264/AAC edited MP4 in addition to the timeline. |
 | `watcher.poll_interval_s` | `5` | Seconds between size checks and inbox scans. |
 | `watcher.stable_checks` | `2` | Consecutive unchanged-size checks before ingest. |
 | `watcher.video_extensions` | `[.mp4, .mov, .mkv, .avi, .webm, .m4v]` | Allowed filename suffixes, matched case-insensitively. |
@@ -314,8 +343,9 @@ or explicitly add them to the Compose service environment.
 Editing the host YAML does not update an existing image: the Dockerfile copies it
 at build time. Rebuild/recreate, or bind-mount your own YAML and use
 `python3 -m app.main --config /path/in/container/config.yaml watch`
-(`--config` precedes the subcommand). Completed stages remain cached even after
+(`--config` precedes the subcommand). CLI/watcher stages remain cached even after
 configuration changes; [reset the job](#reset-a-job) to apply changes throughout.
+New web jobs include per-job settings in their identity instead.
 Unknown keys are ignored by the dataclass loader; use the documented settings.
 For example, `PIPELINE__TRANSCRIPTION__DEVICE=cpu` forces CPU transcription and
 `PIPELINE__TRANSCRIPTION__COMPUTE_TYPE=int8` explicitly selects integer precision.
@@ -332,14 +362,14 @@ For example, `PIPELINE__TRANSCRIPTION__DEVICE=cpu` forces CPU transcription and
 | `<name>.source.srt` | Subtitles on the original, uncut timebase. |
 | `<name>.edited.srt` | Subtitles remapped onto the edited timeline. |
 | `<name>.report.md` | Summary, review notes, statistics, and YouTube chapter text. |
-| `<name>.preview.mp4` (optional) | Rendered preview, only when preview export is enabled. |
+| `<name>.preview.mp4` (optional) | Rendered preview, enabled at submission or rendered later from the job page. |
 
 Stage JSON files (`transcript.json`, `visual.json`, `candidates.json`,
 `decisions.json`, …) remain cached separately in the job's work directory.
 
-Preview is not enabled by default. The exporter has a programmatic
-`cfg.export.preview` hook, but the current YAML/dataclass config has no `export`
-section; `PIPELINE__EXPORT__PREVIEW=true` does not enable it through this CLI.
+Preview is not enabled by default. Set `export.preview: true` in YAML,
+`PIPELINE__EXPORT__PREVIEW=true` in the environment, or enable it in the web form.
+Completed web jobs can render a preview later from the cached cutlist.
 
 In Resolve, choose **File → Import → Timeline**, select the `.fcpxml`, and verify
 the source/timeline frame rate before editing. Menu wording varies by Resolve
@@ -376,9 +406,11 @@ volumes; it does not erase bind-mounted inbox/output/work directories.
 
 ### Reset a job
 
-The watcher resumes pending jobs on restart; the Web UI requires resubmission
-after a restart. Completed jobs are skipped, and resubmissions reuse cached stages.
-The same source stem/content maps to the same job ID. To force a fresh run:
+The watcher resumes pending jobs on restart; the Web UI provides **Retry from saved
+stage** after a restart. Completed jobs are skipped. CLI/watcher jobs use source
+stem/content identity; new web jobs also include per-job settings. In the web UI,
+change settings to queue a separate run without deleting previous results.
+To force a fresh run with identical settings:
 
 1. Stop the server/watcher (for CPU Docker,
    `docker compose -f docker-compose.cpu.yml stop pipeline`) and any manual processing.

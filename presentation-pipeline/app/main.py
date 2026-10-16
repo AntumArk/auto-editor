@@ -7,7 +7,7 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
-from app.config import PipelineConfig, load_config
+from app.config import PipelineConfig, load_config, restore_job_settings
 from app.ingest import ingest
 from app.state import JobState
 from app.utils import ffprobe_duration
@@ -82,6 +82,8 @@ def _process_job(imported, config: PipelineConfig) -> Path:
     )
     if state.is_complete("done"):
         return output_dir
+    if "settings" in state.artifacts:
+        config = restore_job_settings(config, state.artifacts["settings"])
 
     duration = ffprobe_duration(imported.video_path)
     transcript_path = imported.job_dir / "transcript.json"

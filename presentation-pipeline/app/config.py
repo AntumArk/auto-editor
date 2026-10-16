@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, get_origin, get_type_hints
@@ -62,6 +63,11 @@ class ReportConfig:
 
 
 @dataclass
+class ExportConfig:
+    preview: bool = False
+
+
+@dataclass
 class WatcherConfig:
     poll_interval_s: float = 5
     stable_checks: int = 2
@@ -83,7 +89,21 @@ class PipelineConfig:
     cuts: CutsConfig = field(default_factory=CutsConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
+    export: ExportConfig = field(default_factory=ExportConfig)
     watcher: WatcherConfig = field(default_factory=WatcherConfig)
+
+
+def restore_job_settings(config: PipelineConfig, values: dict[str, Any]) -> PipelineConfig:
+    """Restore processing options without replacing server paths or service addresses."""
+    result = deepcopy(config)
+    for section in ("transcription", "visual", "cuts", "llm", "report", "export"):
+        group = getattr(result, section)
+        for item in fields(group):
+            if section == "llm" and item.name in ("provider", "url"):
+                continue
+            if item.name in values.get(section, {}):
+                setattr(group, item.name, values[section][item.name])
+    return result
 
 
 def _dataclass_from_dict(cls: type, values: dict[str, Any]):

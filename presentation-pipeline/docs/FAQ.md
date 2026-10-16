@@ -42,8 +42,9 @@ stop other GPU workloads, and begin with a short clip.
   CUDA initialization/transcription failures broadly fall back to CPU; explicit
   `device: cuda` fails instead of silently falling back.
 
-Model/configuration changes do not invalidate cached transcription. Follow the
-[reset procedure](../README.md#reset-a-job) to retest from the beginning.
+For CLI/watcher jobs, model/configuration changes do not invalidate cached
+transcription; follow the [reset procedure](../README.md#reset-a-job) to retest.
+New web jobs include their per-job settings in the cache identity.
 
 ## Ollama unreachable or model not pulled
 
@@ -88,10 +89,10 @@ State and artifacts live under `/data/work/<job_id>`. The watcher resumes unfini
 jobs on startup and skips completed stages/jobs. Reintroducing the same filename stem and
 content reuses its job ID; changing settings alone does not trigger recomputation.
 The watcher attempts pending-job resumption on startup, not on every inbox poll.
-The Web UI's queue is not restored after a restart: resubmit queued/interrupted
-jobs to reuse their persisted stages. UI settings apply only to new submissions,
-not previously cached stages. Run only one server per work directory, without
-concurrent watchers/manual processors.
+The Web UI's queue is not restored after a restart: use **Retry from saved stage**
+on queued/interrupted jobs to reuse their persisted stages and saved settings.
+Changing settings in a web job's form creates a separate run. Run only one server
+per work directory, without concurrent watchers/manual processors.
 
 Follow [Reset a job](../README.md#reset-a-job): stop all processors, back up the
 ingested source outside work, delete only its job work folder, archive old
@@ -113,8 +114,9 @@ arbitrary cut timestamps.
 Keep values nonnegative. A zero target is not a general “remove every pause”
 switch: full removal requires explicit approval and the
 `cuts.full_remove_min_s` threshold. Also inspect transcription timing, slide
-detection, and `decisions.json` for kept candidates. Reset cached jobs before
-comparing settings; listen around cut boundaries, not just total time saved.
+detection, and `decisions.json` for kept candidates. For CLI/watcher runs, reset
+cached jobs before comparing settings; the web form creates a separate run when
+settings change. Listen around cut boundaries, not just total time saved.
 
 ## Slide changes missed, or cursor movement triggers changes
 
@@ -211,12 +213,24 @@ Submitted paths must be inside the configured inbox (Docker:
 The server keeps inbox source files; CLI `process` moves them unless you use
 `--keep-source` (alias `--copy`).
 
-The UI has one sequential worker. Queued and running job detail pages refresh
-every five seconds; the job list still requires manual refresh. Progress shows
-the last completed stage, not partial progress within a stage. The initial
-transcription may also download the model. Failed jobs show errors; resubmit
-the same source to resume cached stages after fixing the cause. Finished pages
-show output links and escaped Markdown reports.
+The UI has one sequential worker for processing and preview rendering. Job pages
+check progress every five seconds, but do not reload while video is playing or
+settings have been changed; they show a refresh notice instead. The job list
+still requires manual refresh. Progress shows the last completed stage, not
+partial progress within a stage. The initial transcription may download a model.
+Failed jobs show errors and a **Retry from saved stage** action.
+
+The settings form covers supported per-job transcription, visual analysis, cut,
+LLM, report, and preview controls. New web jobs include a settings fingerprint in
+their identity; changing settings creates a separate run, rather than silently
+reusing results generated with different settings. Older jobs remain accessible,
+but cannot display settings that were never saved. Paths and service addresses
+stay in server configuration. The CLI/watcher's source-based identity is unchanged.
+
+Job pages provide source playback, read-only cut/decision review, downloads, and
+escaped Markdown reports. **Render edited preview** creates an H.264/AAC MP4 from
+a completed job's cached cutlist, without retranscribing. Source codecs may not
+play in every browser; use the edited MP4 or download the source instead.
 Native serving defaults to loopback; CPU Docker publishes only
 `127.0.0.1:8000`. There is no authentication or TLS. Bind to `0.0.0.0` or change
 the published host address only on a trusted network, never the public internet.
