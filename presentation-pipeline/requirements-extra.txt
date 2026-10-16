@@ -1,3 +1,4 @@
 # Optional alignment and speaker diarization; install alongside requirements.txt.
-whisperx==3.8.6
-pyannote.audio==4.0.7
+# Keep the 3.x backend for speaker-diarization-3.1 and its two model agreements.
+whisperx==3.7.9
+pyannote.audio==3.4.0

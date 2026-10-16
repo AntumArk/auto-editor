@@ -58,6 +58,8 @@ def diarize(video_path, segments, settings):
     try:
         import torch
         from pyannote.audio import Pipeline
+        from pyannote.audio.core.task import Problem, Resolution, Specifications
+        from torch.torch_version import TorchVersion
     except ImportError as exc:
         raise RuntimeError(
             "Diarization requires requirements-extra.txt (pyannote.audio)."
@@ -67,9 +69,13 @@ def diarize(video_path, segments, settings):
 
     pipeline = annotation = None
     try:
-        pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1", token=token,
-        )
+        # Allow only known checkpoint metadata, without disabling weights-only loading.
+        with torch.serialization.safe_globals([
+            TorchVersion, Specifications, Problem, Resolution,
+        ]):
+            pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-3.1", use_auth_token=token,
+            )
         pipeline.to(torch.device(setting("device", "cpu")))
         options = {
             name: setting(name)
@@ -77,7 +83,6 @@ def diarize(video_path, segments, settings):
             if setting(name) is not None
         }
         annotation = pipeline(str(video_path), **options)
-        annotation = getattr(annotation, "speaker_diarization", annotation)
         turns = [
             {"start": turn.start, "end": turn.end, "speaker": speaker}
             for turn, _, speaker in annotation.itertracks(yield_label=True)

@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import PipelineConfig
-from app.transcribe import transcribe
+from app.transcribe import _align_words, transcribe
 
 
 @pytest.mark.parametrize("device,compute,expected", [
@@ -202,3 +202,77 @@ def test_alignment_failure_keeps_transcript(tmp_path, monkeypatch, caplog, unava
     result = transcribe("video.mp4", config, tmp_path)
     assert result == {"language": "lt", "duration": 1, "segments": []}
     assert "keeping Whisper timestamps" in caplog.text
+
+
+def test_alignment_merges_split_sentences_without_losing_metadata(monkeypatch):
+    result = {"language": "lt", "duration": 5, "segments": [
+        {"start": 0, "end": 3, "text": "Labas. 2026!", "avg_logprob": -0.2,
+         "words": [{"start": 0, "end": 1, "word": "Labas."}]},
+        {"start": 3, "end": 5, "text": "Vilnius.", "avg_logprob": -0.1, "words": []},
+    ]}
+    align = Mock(side_effect=[
+        {"segments": [
+            {"start": 0.1, "end": 1.1,
+             "words": [{"start": 0.1, "end": 1.1, "word": "Labas."}]},
+            {"start": 1.2, "end": 2.9,
+             "words": [{"word": "2026!", "start": None}]},
+        ]},
+        {"segments": [{"start": 3.2, "end": 4.8, "words": [
+            {"start": 3.2, "end": 4.8, "word": "Vilnius."},
+        ]}]},
+    ])
+    monkeypatch.setitem(sys.modules, "whisperx", SimpleNamespace(
+        load_align_model=lambda **kw: (object(), {}),
+        load_audio=lambda path: [], align=align,
+    ))
+    refined = _align_words("video.mp4", result, {}, "cpu")
+    assert len(refined["segments"]) == 2
+    assert [segment["text"] for segment in refined["segments"]] == ["Labas. 2026!", "Vilnius."]
+    assert [segment["avg_logprob"] for segment in refined["segments"]] == [-0.2, -0.1]
+    assert refined["segments"][0]["start"] == 0.1
+    assert refined["segments"][0]["end"] == 2.9
+    assert refined["segments"][1]["words"][0]["start"] == 3.2
+    assert refined["segments"][0]["words"][1] == {
+        "word": "2026!", "start": 0.1, "end": 2.9,
+    }
+    assert result["segments"][0]["start"] == 0
+    assert len(result["segments"][0]["words"]) == 1
+    assert [call.args[0][0]["text"] for call in align.call_args_list] == [
+        "Labas. 2026!", "Vilnius.",
+    ]
+
+
+@pytest.mark.parametrize("start,end", [(float("nan"), 1), (2, 1), (-1, 1)])
+def test_invalid_alignment_timestamps_gracefully_keep_original(monkeypatch, caplog, start, end):
+    result = {"language": "lt", "segments": [
+        {"start": 0, "end": 1, "text": "Labas", "words": []},
+    ]}
+    monkeypatch.setitem(sys.modules, "whisperx", SimpleNamespace(
+        load_align_model=lambda **kw: (object(), {}), load_audio=lambda path: [],
+        align=lambda *a, **kw: {"segments": [{"start": start, "end": end}]},
+    ))
+    assert _align_words("video.mp4", result, {}, "cpu") is result
+    assert "keeping Whisper timestamps" in caplog.text
+
+
+def test_failed_lazy_model_is_released_before_retry(tmp_path, monkeypatch):
+    references = []
+
+    class Model:
+        def __init__(self, name, device, compute_type):
+            if references:
+                assert references[-1]() is None
+            references.append(weakref.ref(self))
+            self.device = device
+
+        def transcribe(self, *args, **kwargs):
+            return self.segments(), SimpleNamespace(language="lt", duration=1)
+
+        def segments(self):
+            if self.device == "cuda":
+                raise RuntimeError("CUDA out of memory")
+            yield from []
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=Model))
+    transcribe("video.mp4", PipelineConfig(), tmp_path)
+    assert all(reference() is None for reference in references)

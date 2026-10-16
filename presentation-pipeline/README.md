@@ -347,6 +347,8 @@ docker compose build --build-arg INSTALL_TRANSCRIPTION_EXTRAS=true pipeline
 The extras include PyTorch and substantially enlarge installation/model caches.
 Check the NVIDIA driver's compatibility with the installed PyTorch CUDA wheels,
 not only the base image. First use downloads models and requires network access.
+The optional pins use pyannote.audio 3.x for the requested 3.1 checkpoint; do not
+independently upgrade it to 4.x, which introduces different model prerequisites.
 
 Enable `transcription.align: true` to refine timings, not the recognized text.
 For `lt`, set `transcription.align_model` to a vetted Lithuanian-compatible

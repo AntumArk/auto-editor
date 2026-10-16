@@ -1,5 +1,6 @@
 import sys
 from copy import deepcopy
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -57,36 +58,40 @@ def test_no_overlap_and_optional_nearest_fill():
     assert "speaker" not in assign_speakers([{"start": 1, "end": 2}], turns)[0]
 
 
-@pytest.mark.parametrize("wrapped", [True, False])
-def test_diarization_lazy_backend_and_environment_token(monkeypatch, wrapped):
+def test_diarization_lazy_backend_and_environment_token(monkeypatch):
     monkeypatch.setenv("TEST_HF_TOKEN", "test-only-placeholder")
     annotation = Mock()
     annotation.itertracks.return_value = [
         (SimpleNamespace(start=0, end=1), None, "SPEAKER_00"),
     ]
-    pipeline = Mock(return_value=(
-        SimpleNamespace(speaker_diarization=annotation) if wrapped else annotation
-    ))
-    if not wrapped:
-        del annotation.speaker_diarization
+    pipeline = Mock(return_value=annotation)
     factory = Mock(return_value=pipeline)
     monkeypatch.setitem(sys.modules, "pyannote.audio", SimpleNamespace(
         Pipeline=SimpleNamespace(from_pretrained=factory),
     ))
+    monkeypatch.setitem(sys.modules, "pyannote.audio.core.task", SimpleNamespace(
+        Problem=int, Resolution=str, Specifications=dict,
+    ))
+    monkeypatch.setitem(sys.modules, "torch.torch_version", SimpleNamespace(
+        TorchVersion=str,
+    ))
     cache = Mock()
+    safe_globals = Mock(return_value=nullcontext())
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(
         device=lambda value: value, cuda=SimpleNamespace(empty_cache=cache),
+        serialization=SimpleNamespace(safe_globals=safe_globals),
     ))
     result = diarize("video.mp4", [{"start": 0, "end": 1}], DiarizationConfig(
         hf_token="TEST_HF_TOKEN", device="cuda", min_speakers=1, max_speakers=3,
     ))
     factory.assert_called_once_with(
-        "pyannote/speaker-diarization-3.1", token="test-only-placeholder",
+        "pyannote/speaker-diarization-3.1", use_auth_token="test-only-placeholder",
     )
     pipeline.to.assert_called_once_with("cuda")
     pipeline.assert_called_once_with("video.mp4", min_speakers=1, max_speakers=3)
     assert result[0]["speaker"] == "SPEAKER_00"
     cache.assert_called_once()
+    safe_globals.assert_called_once_with([str, dict, int, str])
 
 
 def test_missing_token_is_actionable(monkeypatch):

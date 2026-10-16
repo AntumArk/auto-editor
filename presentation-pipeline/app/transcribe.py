@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
@@ -17,6 +18,15 @@ def _setting(config, name, default):
 
 
 def _align_words(video_path, result, settings, device):
+    def timestamps(item, fallback):
+        start = item.get("start")
+        end = item.get("end")
+        start = fallback["start"] if start is None else start
+        end = fallback["end"] if end is None else end
+        if not (math.isfinite(start) and math.isfinite(end) and 0 <= start <= end):
+            raise ValueError("Invalid aligned timestamps")
+        return {"start": start, "end": end}
+
     model = metadata = audio = None
     try:
         import whisperx
@@ -27,25 +37,22 @@ def _align_words(video_path, result, settings, device):
             model_name=_setting(settings, "align_model", None),
         )
         audio = whisperx.load_audio(str(video_path))
-        aligned = whisperx.align(
-            deepcopy(result["segments"]), model, metadata, audio, device,
-            return_char_alignments=False,
-        )
-        segments = aligned["segments"]
-        if len(segments) != len(result["segments"]):
-            raise ValueError("Alignment changed the number of segments")
         updated = deepcopy(result)
-        for original, refined in zip(updated["segments"], segments):
-            for key in ("start", "end"):
-                original[key] = refined.get(key, original[key])
-            if refined.get("words"):
+        for original in updated["segments"]:
+            # Align separately so sentence splitting cannot lose source metadata.
+            aligned = whisperx.align(
+                [deepcopy(original)], model, metadata, audio, device,
+                return_char_alignments=False,
+            )["segments"]
+            if not aligned:
+                raise ValueError("Alignment returned no segments")
+            bounds = [timestamps(segment, original) for segment in aligned]
+            original["start"] = min(item["start"] for item in bounds)
+            original["end"] = max(item["end"] for item in bounds)
+            words = [word for segment in aligned for word in segment.get("words", [])]
+            if words:
                 original["words"] = [
-                    {
-                        **word,
-                        "start": word.get("start", original["start"]),
-                        "end": word.get("end", original["end"]),
-                    }
-                    for word in refined["words"]
+                    {**word, **timestamps(word, original)} for word in words
                 ]
         return updated
     except Exception:
