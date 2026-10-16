@@ -1,0 +1,3 @@
+# Optional alignment and speaker diarization; install alongside requirements.txt.
+whisperx==3.8.6
+pyannote.audio==4.0.7

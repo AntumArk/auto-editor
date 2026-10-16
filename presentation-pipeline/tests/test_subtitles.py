@@ -166,6 +166,26 @@ class RemapSegmentsTests(unittest.TestCase):
 
 
 class SrtTests(unittest.TestCase):
+    def test_speaker_metadata_survives_remap_and_optional_prefix(self):
+        segments = [{
+            "start": 2, "end": 4, "text": " Labas", "speaker": "SPEAKER_00",
+            "words": [{"start": 2, "end": 3, "word": "Labas", "speaker": "SPEAKER_01"}],
+        }]
+        original = deepcopy(segments)
+        remapped = subtitles.remap_segments(segments, [(1, 5)])
+        self.assertEqual(remapped[0]["speaker"], "SPEAKER_00")
+        self.assertEqual(remapped[0]["words"][0]["speaker"], "SPEAKER_01")
+        self.assertEqual(remapped[0]["start"], 1)
+        self.assertNotIn("[SPEAKER_", subtitles.format_srt(remapped))
+        with TemporaryDirectory(dir="/tmp") as directory:
+            path = Path(directory) / "speakers.srt"
+            subtitles.write_srt(remapped, path, speaker_prefix=True)
+            self.assertIn("[SPEAKER_00] Labas", path.read_text())
+        self.assertEqual(segments, original)
+        self.assertIn("plain\n\n", subtitles.format_srt(
+            [{"start": 0, "end": 1, "text": "plain"}], speaker_prefix=True,
+        ))
+
     def test_timestamp_rounding_and_normalized_carry(self):
         for seconds, expected in [
             (0, "00:00:00,000"), (1.2344, "00:00:01,234"),

@@ -23,11 +23,39 @@ class TranscriptionConfig:
     compute_type: str = "auto"
     task: str = "transcribe"
     vad: bool = True
+    vad_filter: bool | None = None
+    vad_parameters: dict[str, Any] | None = None
     word_timestamps: bool = True
+    beam_size: int = 5
+    condition_on_previous_text: bool = False
+    initial_prompt: str | None = None
+    align: bool = False
+    align_model: str | None = None
 
     def __post_init__(self) -> None:
         if self.device not in ("auto", "cuda", "cpu"):
             raise ValueError("transcription.device must be auto, cuda, or cpu")
+
+
+@dataclass
+class DiarizationConfig:
+    enabled: bool = False
+    hf_token: str = "HF_TOKEN"
+    min_speakers: int | None = None
+    max_speakers: int | None = None
+    device: str = "cpu"
+    fill_nearest: bool = False
+    speaker_prefix: bool = False
+
+    def __post_init__(self) -> None:
+        if self.device not in ("cpu", "cuda"):
+            raise ValueError("diarization.device must be cpu or cuda")
+        for count in (self.min_speakers, self.max_speakers):
+            if count is not None and (type(count) is not int or count < 1):
+                raise ValueError("diarization speaker counts must be positive integers")
+        if (self.min_speakers is not None and self.max_speakers is not None
+                and self.min_speakers > self.max_speakers):
+            raise ValueError("diarization.min_speakers must not exceed max_speakers")
 
 
 @dataclass
@@ -79,6 +107,7 @@ class WatcherConfig:
 class PipelineConfig:
     paths: PathsConfig = field(default_factory=PathsConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
+    diarization: DiarizationConfig = field(default_factory=DiarizationConfig)
     visual: VisualConfig = field(default_factory=VisualConfig)
     cuts: CutsConfig = field(default_factory=CutsConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)

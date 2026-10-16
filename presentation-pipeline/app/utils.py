@@ -1,8 +1,21 @@
 from __future__ import annotations
 
 import json
+import gc
+import logging
 import subprocess
 from pathlib import Path
+
+
+def release_gpu_memory() -> None:
+    """Collect released models and clear PyTorch's optional CUDA cache."""
+    gc.collect()
+    try:
+        import torch
+
+        torch.cuda.empty_cache()
+    except Exception:
+        logging.getLogger(__name__).debug("CUDA cache cleanup unavailable")
 
 
 def ffprobe_duration(path: str | Path) -> float:

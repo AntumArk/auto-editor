@@ -10,7 +10,23 @@ transcription:
   language: lt
   task: transcribe
   vad: true
+  vad_filter: null
+  vad_parameters: null
   word_timestamps: true
+  beam_size: 5
+  condition_on_previous_text: false
+  initial_prompt: null
+  align: false
+  align_model: null
+
+diarization:
+  enabled: false
+  hf_token: HF_TOKEN
+  min_speakers: null
+  max_speakers: null
+  device: cpu
+  fill_nearest: false
+  speaker_prefix: false
 
 visual:
   sample_fps: 3

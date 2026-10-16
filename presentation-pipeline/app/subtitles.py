@@ -111,23 +111,27 @@ def format_timestamp(seconds):
     return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
 
 
-def format_srt(segments):
+def format_srt(segments, speaker_prefix=False):
     """Return sequentially numbered SRT cues, including a final blank line."""
     cues = []
     for number, segment in enumerate(segments, 1):
         start, end = _seconds(segment["start"]), _seconds(segment["end"])
         if end < start:
             raise ValueError("Subtitle end must not precede its start")
+        prefix = (
+            f"[{segment['speaker']}] "
+            if speaker_prefix and segment.get("speaker") else ""
+        )
         cues.append(
             f"{number}\n"
             f"{format_timestamp(segment['start'])} --> "
             f"{format_timestamp(segment['end'])}\n"
-            f"{segment['text']}\n\n"
+            f"{prefix}{segment['text'].lstrip() if prefix else segment['text']}\n\n"
         )
     return "".join(cues)
 
 
-def write_srt(segments, path):
+def write_srt(segments, path, speaker_prefix=False):
     """Write SRT to a string or path-like destination as UTF-8 with LF newlines."""
     with Path(path).open("w", encoding="utf-8", newline="\n") as output:
-        output.write(format_srt(segments))
+        output.write(format_srt(segments, speaker_prefix=speaker_prefix))

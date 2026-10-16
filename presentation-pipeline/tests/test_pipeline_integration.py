@@ -156,6 +156,19 @@ def test_report_discards_slide_changes_inside_removed_ranges(pipeline, monkeypat
     assert mocks["make_chapters"].call_args.args[0] == [0, 45]
 
 
+@pytest.mark.parametrize("prefix", [False, True])
+def test_speaker_labels_reach_source_and_edited_subtitles(pipeline, prefix):
+    config, source, mocks = pipeline
+    config.diarization.speaker_prefix = prefix
+    for segment in mocks["transcribe"].return_value["segments"]:
+        segment["speaker"] = "SPEAKER_00"
+    output = main.process_file(source, config, move=False)
+    for suffix in ("source", "edited"):
+        text = (output / f"Original talk.{suffix}.srt").read_text()
+        assert ("[SPEAKER_00] Introduction." in text) is prefix
+    assert mocks["write_srt"].call_args.args[0][0]["speaker"] == "SPEAKER_00"
+
+
 @pytest.mark.parametrize("flag", ["--keep-source", "--copy", None])
 def test_process_cli_source_handling(pipeline, monkeypatch, flag):
     config, source, mocks = pipeline

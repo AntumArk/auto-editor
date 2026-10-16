@@ -147,9 +147,10 @@ def _process_job(imported, config: PipelineConfig) -> Path:
     def write_subtitles():
         source_srt = subtitles_dir / f"{source_stem}.source.srt"
         edited_srt = subtitles_dir / f"{source_stem}.edited.srt"
-        subtitles_module.write_srt(transcript["segments"], source_srt)
+        prefix_options = {"speaker_prefix": True} if config.diarization.speaker_prefix else {}
+        subtitles_module.write_srt(transcript["segments"], source_srt, **prefix_options)
         remapped = subtitles_module.remap_segments(transcript["segments"], cutlist.keep)
-        subtitles_module.write_srt(remapped, edited_srt)
+        subtitles_module.write_srt(remapped, edited_srt, **prefix_options)
         return {"source": str(source_srt), "edited": str(edited_srt)}
 
     _stage(state, "subtitles", imported.job_dir / "subtitles.json", write_subtitles)
