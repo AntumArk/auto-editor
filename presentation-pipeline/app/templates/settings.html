@@ -1,0 +1,36 @@
+<input type="hidden" name="settings_form" value="1">
+{% for section, title in groups %}
+<details class="settings-group"{% if section in ('transcription', 'export') %} open{% endif %}>
+  <summary>{{ title }}</summary>
+  <div class="fields">
+  {% for setting in settings if setting.section == section %}
+    {% set value = config|attr(section)|attr(setting.key) %}
+    <div class="field{% if setting.kind == 'checkbox' %} checkbox{% endif %}">
+      <label for="{{ setting.name }}">{{ setting.label }}</label>
+      {% if setting.kind == 'select' %}
+      <select name="{{ setting.name }}" id="{{ setting.name }}">
+        {% for choice in setting.choices %}
+        <option value="{{ choice }}"{% if value == choice %} selected{% endif %}>{{ choice }}</option>
+        {% endfor %}
+        {% if value not in setting.choices %}
+        <option value="{{ value }}" selected>{{ value }}</option>
+        {% endif %}
+      </select>
+      {% elif setting.kind == 'checkbox' %}
+      <input type="checkbox" name="{{ setting.name }}" id="{{ setting.name }}"{% if value %} checked{% endif %}>
+      {% elif setting.kind in ('number', 'integer') %}
+      <input type="number" name="{{ setting.name }}" id="{{ setting.name }}" value="{{ value }}"
+             min="{{ setting.minimum }}" max="{{ setting.maximum }}"
+             step="{{ '1' if setting.kind == 'integer' else 'any' }}" required>
+      {% else %}
+      <input type="text" name="{{ setting.name }}" id="{{ setting.name }}" value="{{ value or '' }}"
+             {% if setting.kind == 'language' %}maxlength="3"{% else %}maxlength="200" required{% endif %}>
+      {% endif %}
+      {% if setting.help %}<small>{{ setting.help }}</small>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+</details>
+{% endfor %}
+<p class="hint">Source and edited SRT subtitles, a Resolve timeline, cutlist JSON, and a report are always
+generated. Speaker identification is not available. Server paths and service addresses remain in server configuration.</p>

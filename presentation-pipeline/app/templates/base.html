@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Presentation studio{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='studio.css') }}">
+  <script src="{{ url_for('static', filename='studio.js') }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('jobs') }}">Presentation <strong>studio</strong></a>
+    <span>Local processing / auto-editor</span>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>
