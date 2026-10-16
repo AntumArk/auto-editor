@@ -1,0 +1,40 @@
+services:
+  pipeline:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    environment:
+      PIPELINE__LLM__URL: http://ollama:11434
+      PIPELINE__PATHS__INBOX: /data/inbox
+      PIPELINE__PATHS__OUTPUT: /data/output
+      PIPELINE__PATHS__WORKDIR: /data/work
+    volumes:
+      - ${PIPELINE_INBOX:-/data/inbox}:/data/inbox
+      - ${PIPELINE_OUTPUT:-/data/output}:/data/output
+      - ${PIPELINE_WORKDIR:-/data/work}:/data/work
+      - whisper-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  whisper-cache:
+  ollama:
