@@ -72,8 +72,8 @@ nas.example:/exports/presentations /mnt/nas nfs defaults,_netdev 0 0
 //nas.example/presentations /mnt/nas cifs credentials=/etc/samba/pipeline.credentials,vers=3.0,uid=1000,gid=1000,file_mode=0660,dir_mode=0770,_netdev 0 0
 ```
 
-For SMB, create the credentials file outside the repository with your NAS
-`username=` and `****** entries; restrict it with
+For SMB, create the credentials file outside the repository with your NAS login
+fields in the format required by `mount.cifs`; restrict it with
 `sudo chmod 600 /etc/samba/pipeline.credentials`. Never commit credentials.
 Mount with `sudo mount /mnt/nas` and verify the actual mounted filesystem before
 starting Docker, including after a reboot. Otherwise Docker may write to the
