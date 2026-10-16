@@ -40,3 +40,5 @@ __pycache__/
 .pytest_cache/
 presentation-pipeline/data/output/*
 presentation-pipeline/data/output/**/*
+presentation-pipeline/data/work/*
+presentation-pipeline/data/work/**/*

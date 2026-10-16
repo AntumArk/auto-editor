@@ -2,7 +2,7 @@
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from .subtitles import write_srt
@@ -14,7 +14,10 @@ def _setting(config, name, default):
     return getattr(config, name, default)
 
 
-def transcribe(video_path, cfg, out_dir) -> dict:
+def transcribe(
+    video_path, cfg, out_dir,
+    progress: Callable[[str, float | None, float | None], None] | None = None,
+) -> dict:
     """Transcribe on the configured device, with CUDA fallback in auto mode."""
     from faster_whisper import WhisperModel
 
@@ -31,31 +34,43 @@ def transcribe(video_path, cfg, out_dir) -> dict:
         "word_timestamps": _setting(settings, "word_timestamps", True),
     }
 
+    def report(message, completed=None, total=None):
+        if progress is not None:
+            progress(message, completed, total)
+
     def run(device, compute_type):
+        report(f"Loading Whisper {model_name} on {device} ({compute_type}); "
+               "the first run may download the model.")
         model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        report("Decoding audio and detecting speech; this can take time on long videos.")
         segments, info = model.transcribe(str(video_path), **options)
+        report(f"Transcribing speech on {device}.", 0, info.duration)
+        transcript = []
+        for segment in segments:
+            transcript.append({
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text,
+                "avg_logprob": segment.avg_logprob,
+                "no_speech_prob": segment.no_speech_prob,
+                "words": [
+                    {
+                        "start": word.start,
+                        "end": word.end,
+                        "word": word.word,
+                        "probability": word.probability,
+                    }
+                    for word in (segment.words or [])
+                ],
+            })
+            report(
+                f"Transcribing speech on {device}.",
+                min(segment.end, info.duration), info.duration,
+            )
         return {
             "language": info.language,
             "duration": info.duration,
-            "segments": [
-                {
-                    "start": segment.start,
-                    "end": segment.end,
-                    "text": segment.text,
-                    "avg_logprob": segment.avg_logprob,
-                    "no_speech_prob": segment.no_speech_prob,
-                    "words": [
-                        {
-                            "start": word.start,
-                            "end": word.end,
-                            "word": word.word,
-                            "probability": word.probability,
-                        }
-                        for word in (segment.words or [])
-                    ],
-                }
-                for segment in segments
-            ],
+            "segments": transcript,
         }
 
     def compute_for(target):

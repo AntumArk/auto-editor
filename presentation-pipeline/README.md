@@ -127,8 +127,12 @@ Source playback depends on browser codec support; edited previews use H.264/AAC 
 cached cutlist without rerunning transcription. Preview failures are shown with
 a retry action. Video endpoints support HTTP range requests for seeking.
 
-Job progress checks every five seconds; playback and edited settings prevent an
-automatic page reload and show a refresh notice instead. The job list still
+Job progress checks every five seconds. Current activity, stage elapsed time, and
+transcription audio position update in place, including during playback or settings
+edits. Model loading/download and audio decoding are indeterminate; CPU transcription
+can take longer than the source video. The completed-stage counter advances only
+after each stage finishes. Playback and edited settings prevent an automatic page
+reload for completed stages and show a refresh notice instead. The job list still
 requires manual refresh. Failed processing can be retried from its last saved stage.
 New web jobs save their editable settings in job state and include a settings
 fingerprint in their ID: identical source/name/settings reuse a run; changing

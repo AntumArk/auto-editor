@@ -47,6 +47,33 @@ if (job) {
   const initial = JSON.parse(job.dataset.snapshot);
   const notice = document.getElementById("update-notice");
   const error = document.getElementById("poll-error");
+  const activity = document.getElementById("live-progress");
+  const activityMessage = document.getElementById("activity-message");
+  const activityProgress = document.getElementById("activity-progress");
+  const activityDetail = document.getElementById("activity-detail");
+  const seconds = (value) => {
+    const minutes = Math.floor(value / 60);
+    return `${minutes}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
+  };
+  function updateActivity(status) {
+    activity.hidden = status.status !== "running";
+    const progress = status.progress || {};
+    activityMessage.textContent = progress.message ||
+      "Processing the next stage; waiting for activity details.";
+    const details = [];
+    if (Number.isFinite(progress.completed) && progress.total > 0) {
+      activityProgress.max = progress.total;
+      activityProgress.value = progress.completed;
+      details.push(`Audio reached ${seconds(progress.completed)} / ${seconds(progress.total)}`);
+    } else {
+      activityProgress.removeAttribute("value");
+    }
+    if (Number.isFinite(progress.started_at)) {
+      details.push(`Stage elapsed: ${seconds(Math.max(0, Date.now() / 1000 - progress.started_at))}`);
+    }
+    activityDetail.textContent = details.join(" / ");
+  }
+  updateActivity(initial);
   let dirty = false;
   document.querySelectorAll("[data-settings-form]").forEach((form) => {
     form.addEventListener("input", () => { dirty = true; });
@@ -64,6 +91,7 @@ if (job) {
       if (!response.ok) throw new Error(`Progress request failed (${response.status}).`);
       const status = await response.json();
       error.hidden = true;
+      updateActivity(status);
       if (signature(status) !== signature(initial)) {
         const playing = [...document.querySelectorAll("video")].some(
           (video) => !video.paused && !video.ended

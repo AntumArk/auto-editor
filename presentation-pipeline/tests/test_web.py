@@ -155,6 +155,39 @@ def test_single_worker_queues_jobs_and_deduplicates_active_source(ui):
     assert "done" in client.get(second.location).text
 
 
+def test_running_progress_is_available_without_completing_a_stage(ui):
+    _, app, client, token, run = ui
+    started, release = Event(), Event()
+    original = run.side_effect
+
+    def block(imported, settings):
+        state = JobState.load(imported.job_dir / "state.json")
+        state.report_progress("transcribed", "Transcribing <speech> on cpu.", 30, 120)
+        started.set()
+        assert release.wait(timeout=5)
+        return original(imported, settings)
+
+    run.side_effect = block
+    try:
+        response = upload(client, token)
+        assert started.wait(timeout=5)
+        status = client.get(response.location + "/status").json
+        assert status["status"] == "running"
+        assert status["stage"] == "ingested"
+        assert status["progress"]["completed"] == 30
+        assert status["progress"]["total"] == 120
+        page = client.get(response.location)
+        assert "Transcribing &lt;speech&gt; on cpu." in page.text
+        assert 'id="activity-progress" value="30" max="120"' in page.text
+        assert "Last completed stage: ingested" in page.text
+    finally:
+        release.set()
+    drain(app)
+    status = client.get(response.location + "/status").json
+    assert status["progress"] == {}
+    assert status["status"] == "done"
+
+
 @pytest.mark.parametrize("data", [
     {}, {"path": "missing.mp4"}, {"path": "../outside.mp4"}, {"path": "/etc/passwd"},
     {"path": "bad\0.mp4"},

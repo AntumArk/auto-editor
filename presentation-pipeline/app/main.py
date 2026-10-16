@@ -65,6 +65,7 @@ def _stage(
 ):
     if state.is_complete(stage):
         return _read_json(artifact_path)
+    state.report_progress(stage, f"Running {stage} stage.")
     result = function()
     _write_json(artifact_path, result)
     state.mark_stage(stage, str(artifact_path))
@@ -85,6 +86,7 @@ def _process_job(imported, config: PipelineConfig) -> Path:
     if "settings" in state.artifacts:
         config = restore_job_settings(config, state.artifacts["settings"])
 
+    state.report_progress("inspect", "Inspecting source video duration.")
     duration = ffprobe_duration(imported.video_path)
     transcript_path = imported.job_dir / "transcript.json"
     transcript = _stage(
@@ -92,7 +94,10 @@ def _process_job(imported, config: PipelineConfig) -> Path:
         "transcribed",
         transcript_path,
         lambda: _module("transcribe").transcribe(
-            imported.video_path, config, imported.job_dir
+            imported.video_path, config, imported.job_dir,
+            progress=lambda message, completed, total: state.report_progress(
+                "transcribed", message, completed, total
+            ),
         ),
     )
 
@@ -137,10 +142,12 @@ def _process_job(imported, config: PipelineConfig) -> Path:
     cutlist = _restore(cutlist_data, cutlist_module, "CutList")
     source_stem = Path(imported.original_name).stem
     if state.artifacts.get("cut_exported") is not True:
+        state.report_progress("export", "Exporting the timeline and optional video preview.")
         cutlist_module.export_with_auto_editor(
             imported.video_path, cutlist, output_dir, config, name=source_stem
         )
         state.artifacts["cut_exported"] = True
+        state.artifacts.pop("progress", None)
         state.save()
 
     subtitles_module = _module("subtitles")

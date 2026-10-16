@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -97,6 +98,22 @@ class JobState:
             raise ValueError(f"Unknown job stage: {stage}")
         return STAGES.index(self.stage) >= STAGES.index(stage)
 
+    def report_progress(
+        self, stage: str, message: str,
+        completed: float | None = None, total: float | None = None,
+    ) -> None:
+        previous = self.artifacts.get("progress", {})
+        now = time.time()
+        self.artifacts["progress"] = {
+            "stage": stage,
+            "message": message,
+            "completed": completed,
+            "total": total,
+            "started_at": previous["started_at"] if previous.get("stage") == stage else now,
+            "updated_at": now,
+        }
+        self.save()
+
     def mark_stage(self, stage: str, artifact: Any = None) -> None:
         if stage not in STAGES:
             raise ValueError(f"Unknown job stage: {stage}")
@@ -108,5 +125,6 @@ class JobState:
             raise ValueError(f"Cannot advance job from {self.stage} to {stage}")
         if artifact is not None:
             self.artifacts[stage] = artifact
+        self.artifacts.pop("progress", None)
         self.stage = stage
         self.save()

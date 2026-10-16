@@ -2,7 +2,7 @@
 {% block title %}{{ state.original_name }} - Presentation studio{% endblock %}
 {% block content %}
 <div id="job-status" data-status-url="{{ url_for('status', job_id=state.job_id) }}"
-     data-snapshot="{{ {'stage': state.stage, 'status': state.status, 'error': state.error, 'preview': preview, 'files': files}|tojson|forceescape }}">
+     data-snapshot="{{ {'stage': state.stage, 'status': state.status, 'error': state.error, 'preview': preview, 'files': files, 'progress': progress}|tojson|forceescape }}">
   <section class="page-heading">
     <div><a href="{{ url_for('jobs') }}">All edits</a><h1>{{ state.original_name }}</h1>
     <p class="job-id">Job: {{ state.job_id }}</p></div>
@@ -84,13 +84,19 @@
     <section class="panel">
       <h2>Progress</h2>
       <p>Status: {{ 'done' if state.stage == 'done' else state.status }}</p>
+      <div id="live-progress"{% if state.status != 'running' %} hidden{% endif %}>
+        <p id="activity-message" role="status">{{ progress.message or 'Processing the next stage; waiting for activity details.' }}</p>
+        <progress id="activity-progress"{% if progress.total and progress.completed is not none %} value="{{ progress.completed }}" max="{{ progress.total }}"{% endif %} aria-label="Current stage progress"></progress>
+        <p id="activity-detail" class="hint"></p>
+      </div>
       <p>Last completed stage: {{ state.stage }} ({{ completed }}/{{ stages|length }})</p>
       <progress value="{{ completed }}" max="{{ stages|length }}">{{ completed }}/{{ stages|length }}</progress>
       <ol class="stages">{% for stage in stages %}
         <li>{{ stage }}{% if loop.index <= completed %} - complete{% endif %}</li>
       {% endfor %}</ol>
       <p class="hint">Progress checks every 5 seconds without interrupting playback or settings changes.
-      Stages update only when complete; the initial transcription may download a model.</p>
+      The stage counter advances only when a stage completes. Activity details update during transcription;
+      model loading and audio decoding have no percentage. CPU transcription can take longer than the video.</p>
       {% if state.status == 'failed' and state.stage != 'done' %}
       <form action="{{ url_for('resume', job_id=state.job_id) }}" method="post">
         <input type="hidden" name="token" value="{{ token }}"><button type="submit">Retry from saved stage</button>

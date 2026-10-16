@@ -56,6 +56,7 @@ class JobWorker:
             if imported.job_id in self.active or state.is_complete("done"):
                 return imported.job_id
             state.artifacts["settings"] = snapshot(config)
+            state.artifacts.pop("progress", None)
             state.status, state.error = "queued", None
             state.save()
             self.active.add(imported.job_id)
@@ -69,6 +70,7 @@ class JobWorker:
             state = JobState.load(imported.job_dir / "state.json")
             if state.is_complete("done"):
                 return
+            state.artifacts.pop("progress", None)
             state.status, state.error = "queued", None
             state.save()
             self.active.add(imported.job_id)
@@ -287,6 +289,7 @@ def create_app(config: PipelineConfig) -> Flask:
             review_warnings=review_warnings,
             previews=[name for name in files if name.endswith(".preview.mp4")],
             preview=state.artifacts.get("preview", {}),
+            progress=state.artifacts.get("progress", {}),
         )
 
     @app.post("/jobs/<job_id>/rerun")
@@ -325,6 +328,7 @@ def create_app(config: PipelineConfig) -> Flask:
         return {
             "stage": state.stage, "status": state.status, "error": state.error,
             "preview": state.artifacts.get("preview", {}), "files": outputs(job_id),
+            "progress": state.artifacts.get("progress", {}),
         }
 
     @app.get("/jobs/<job_id>/source")

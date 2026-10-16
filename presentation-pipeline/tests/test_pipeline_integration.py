@@ -158,6 +158,27 @@ def test_report_discards_slide_changes_inside_removed_ranges(pipeline, monkeypat
     assert mocks["make_chapters"].call_args.args[0] == [0, 45]
 
 
+def test_transcription_progress_is_persisted_before_stage_finishes(pipeline):
+    config, source, mocks = pipeline
+    transcript = mocks["transcribe"].return_value
+
+    def transcribing(video_path, settings, job_dir, *, progress):
+        state = JobState.load(job_dir / "state.json")
+        assert state.stage == "ingested"
+        assert state.artifacts["progress"]["stage"] == "transcribed"
+        progress("Transcribing speech on cpu.", 30, 80)
+        state = JobState.load(job_dir / "state.json")
+        assert state.stage == "ingested"
+        assert state.artifacts["progress"]["completed"] == 30
+        return transcript
+
+    mocks["transcribe"].side_effect = transcribing
+    output = main.process_file(source, config, move=False)
+    state = JobState.load(Path(config.paths.workdir) / output.name / "state.json")
+    assert state.stage == "done"
+    assert "progress" not in state.artifacts
+
+
 def test_core_resume_honors_saved_web_settings_without_replacing_paths(pipeline):
     config, source, mocks = pipeline
     imported = ingest(source, config, move=False)
