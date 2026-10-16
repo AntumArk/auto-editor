@@ -133,6 +133,7 @@ def transcribe(video_path, cfg, out_dir) -> dict:
                 "Transcription failed on %s/%s; retrying on %s/%s.",
                 target, precision, *attempts[index + 1],
             )
+        release_gpu_memory()
 
     if _setting(settings, "align", False):
         result = _align_words(video_path, result, settings, target)

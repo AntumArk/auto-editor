@@ -21,12 +21,13 @@ Commands and paths below are approximate. Verify them against the current
 ```bash
 cd presentation-pipeline
 python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt pytest
+pip install -r requirements-test.txt
 pytest -v
 ```
 
 **Pass:** all tests pass, including cuts, subtitles, chapters, LLM validation,
-configuration, and state tests.
+configuration, state, transcription fallback/cleanup, and speaker-overlap tests.
+Whisper, WhisperX, and pyannote are mocked; no models, GPU, or network are needed.
 
 ## Phase 2 – Docker & GPU smoke test
 
@@ -43,8 +44,24 @@ docker compose run --rm pipeline auto-editor --version
 
 **Warning:** on 8 GB GPUs (for example, an RTX 3070), Whisper large-v3 and a
 7B LLM will not fit in memory at the same time. Transcription should finish
-and free VRAM before the LLM step. If you run out of memory, use
-`compute_type=int8_float16` or a smaller LLM.
+and free VRAM before the LLM step. CUDA now defaults to `int8_float16` (including
+when `compute_type: auto`), with configured precision → `int8_float16` → CPU
+`int8` fallback, including errors during lazy transcription. Whisper, optional
+alignment, and diarization models are released between stages; garbage
+collection and optional PyTorch CUDA cache cleanup run before LLM review.
+Unload/stop any already resident Ollama model before transcription. If memory
+is still tight, use CPU transcription/diarization, a smaller LLM, or disable LLM.
+Measure actual peak VRAM; fitting on 8 GB is a target, not a guarantee.
+
+For optional backend smoke tests, install `requirements-extra.txt` alongside
+`requirements.txt`, or use
+`docker compose build --build-arg INSTALL_TRANSCRIPTION_EXTRAS=true pipeline`.
+Check the host driver's compatibility with PyTorch's CUDA wheels. Accept Hugging
+Face terms for **both** `pyannote/speaker-diarization-3.1` and
+`pyannote/segmentation-3.0`, then export a read token as `HF_TOKEN` without saving
+it in YAML, logs, or the repository. `diarization.hf_token` names that environment
+variable; Docker needs explicit `-e HF_TOKEN` forwarding. See the
+[README](../README.md#optional-alignment-and-speaker-labels) for setup.
 
 ## Phase 3 – Stage-by-stage on a short clip
 
@@ -65,12 +82,34 @@ yt-dlp -f "bv*+ba/b" <url>
 |---|---|
 | Ingest | The file is picked up only after copying finishes; a job folder appears in `/data/work`; a restart does not reprocess it. |
 | Transcription | `transcript.json` has word timings; `clip.source.srt` reads correctly in LT/EN. |
+| Alignment (optional) | With `transcription.align: true`, compare word boundaries by listening. Lithuanian requires a vetted `align_model`; unsupported/missing models should warn and keep original timings. |
+| Diarization (optional) | With `diarization.enabled: true`, inspect segment/word `speaker` labels at speaker changes. Test `min_speakers`/`max_speakers`, CPU/CUDA, and optional SRT prefixes in both source and edited files. |
 | Slide detection | Change times match real slide changes (spot-check about five); cursor movement is not counted. |
 | Cut candidates | Candidates occur only during silence on an unchanged slide; none cut into speech. |
 | LLM review | Output is valid JSON; with Ollama stopped, the run still completes with defaults (reason `llm_unavailable`). |
 | Export | The timeline imports into DaVinci Resolve with correct cuts; `cutlist.json` is present. |
 | Subtitles | `clip.edited.srt` stays in sync in Resolve, especially right after cuts. |
 | Report | The first chapter is `00:00`, chapters are at least 10 s apart, and stats are consistent (`original − edited = removed`). |
+
+### Compare transcription settings on the same 3-minute clip
+
+1. Keep an untouched copy of the clip. Use separate work/output directories per
+   configuration, or follow the README's **Reset a job** instructions; completed
+   stages are cached and configuration changes do not invalidate them.
+2. Baseline: `large-v3`, CUDA `int8_float16`, `beam_size: 5`,
+   `condition_on_previous_text: false`, VAD and word timestamps enabled.
+   Prefer this over `large-v3-turbo`, which is generally worse for Lithuanian.
+3. Change one option per run: a glossary in `initial_prompt`, `beam_size`,
+   `vad_parameters`, then optional alignment with a language-compatible model.
+   Compare the same phrases/names against a manually checked transcript.
+4. Enable diarization separately (`device: cpu` is the low-VRAM default).
+   Compare overlap-only assignment against `fill_nearest: true`; inspect silence,
+   zero-duration words, and overlapping speakers. Labels are anonymous and may
+   change numbering between runs.
+5. Record text errors, word-boundary accuracy, speaker-change accuracy, subtitle
+   sync after cuts, elapsed time, peak VRAM, and fallback/alignment warnings.
+   Confirm VRAM falls before alignment/diarization and LLM stages. Never attach
+   tokens or private recordings to test reports.
 
 ## Phase 4 – Full end-to-end
 

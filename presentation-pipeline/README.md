@@ -270,12 +270,25 @@ or explicitly add them to the Compose service environment.
 | `paths.output` | `/data/output` | Root for per-job deliverables. |
 | `paths.workdir` | `/data/work` | Source videos, state, and cached stage artifacts. |
 | `transcription.model` | `large-v3` | faster-whisper model name or supported model path. |
-| `transcription.device` | `auto` | `auto` tries CUDA and broadly falls back to CPU if CUDA initialization or transcription fails; `cpu` forces CPU; explicit `cuda` fails rather than silently falling back. |
-| `transcription.compute_type` | `auto` | `auto` selects GPU `float16` or CPU `int8`; an explicit faster-whisper compute type overrides this selection. |
+| `transcription.device` | `auto` | `auto` and `cuda` try CUDA, then fall back on errors (including OOM); `cpu` forces CPU. |
+| `transcription.compute_type` | `auto` | `auto` selects CUDA `int8_float16` or CPU `int8`. CUDA retry order is configured precision → `int8_float16` → CPU `int8`, without duplicate attempts. An explicit CPU precision is honored. |
 | `transcription.language` | `lt` | Whisper language hint; YAML `null` enables automatic detection. |
 | `transcription.task` | `transcribe` | Whisper task; `transcribe` preserves spoken language, `translate` translates into English. |
 | `transcription.vad` | `true` | Enable voice activity filtering during transcription. |
+| `transcription.vad_filter` | `null` | Optional override for `vad`; `null` retains the existing `vad` setting. |
+| `transcription.vad_parameters` | `null` | Optional faster-whisper VAD mapping, e.g. `{min_silence_duration_ms: 500}`. |
 | `transcription.word_timestamps` | `true` | Request word timings for subtitle remapping and speech protection. |
+| `transcription.beam_size` | `5` | Decoding beam width. |
+| `transcription.condition_on_previous_text` | `false` | Avoid carrying previous text into decoding, reducing repetition/loops. |
+| `transcription.initial_prompt` | `null` | Optional glossary of names/technical terms in the talk. |
+| `transcription.align` | `false` | Refine word timestamps with optional WhisperX after releasing Whisper. Warn and retain original timings if unavailable or unsuccessful. |
+| `transcription.align_model` | `null` | Optional language-compatible alignment model ID/path; needed for languages without a WhisperX default, such as Lithuanian. |
+| `diarization.enabled` | `false` | Run optional `pyannote/speaker-diarization-3.1` after Whisper/alignment. An enabled but unavailable backend/token fails with an error. |
+| `diarization.hf_token` | `HF_TOKEN` | **Environment variable name**, never the token value. |
+| `diarization.min_speakers` / `max_speakers` | `null` | Optional positive speaker-count bounds; otherwise let pyannote estimate. |
+| `diarization.device` | `cpu` | `cpu` or `cuda`; CPU saves VRAM at the cost of speed. |
+| `diarization.fill_nearest` | `false` | Assign the nearest speaker turn when there is no time overlap; otherwise leave unlabeled. |
+| `diarization.speaker_prefix` | `false` | Prefix source and edited SRT cues with `[SPEAKER_00] ` when labeled. |
 | `visual.sample_fps` | `3` | Frames sampled per second for slide-change analysis. |
 | `visual.change_threshold` | `0.04` | Normalized mean frame-difference threshold; lower is more sensitive. |
 | `visual.downscale_width` | `320` | Maximum analysis frame width in pixels. |
@@ -303,6 +316,73 @@ configuration changes; [reset the job](#reset-a-job) to apply changes throughout
 Unknown keys are ignored by the dataclass loader; use the documented settings.
 For example, `PIPELINE__TRANSCRIPTION__DEVICE=cpu` forces CPU transcription and
 `PIPELINE__TRANSCRIPTION__COMPUTE_TYPE=int8` explicitly selects integer precision.
+
+### Quality on an 8 GB GPU
+
+Keep `large-v3` for Lithuanian: `large-v3-turbo` is faster but generally worse
+for Lithuanian transcription; compare on your own audio before changing models.
+The default CUDA `int8_float16` mode lowers VRAM use while retaining the large
+model. No fixed VRAM budget is guaranteed: clip length, software, and other
+processes matter. CPU `int8` is the slow, GPU-free fallback.
+Whisper is released and garbage collected after transcription; the optional
+PyTorch CUDA cache is cleared. Alignment and diarization run sequentially and
+release their models before LLM review. Stop/unload an already resident Ollama
+model before starting transcription on 8 GB; freeing Whisper cannot evict
+Ollama's model. Use a smaller LLM or disable LLM review if necessary.
+
+### Optional alignment and speaker labels
+
+Heavy dependencies are **not** installed by default. In the native venv:
+
+```sh
+python3 -m pip install -r requirements.txt -r requirements-extra.txt
+```
+
+For Docker, rebuild the pipeline image with the opt-in build argument:
+
+```sh
+docker compose build --build-arg INSTALL_TRANSCRIPTION_EXTRAS=true pipeline
+```
+
+The extras include PyTorch and substantially enlarge installation/model caches.
+Check the NVIDIA driver's compatibility with the installed PyTorch CUDA wheels,
+not only the base image. First use downloads models and requires network access.
+
+Enable `transcription.align: true` to refine timings, not the recognized text.
+For `lt`, set `transcription.align_model` to a vetted Lithuanian-compatible
+wav2vec2/CTC alignment model; no unverified model is selected automatically.
+Missing WhisperX, unsupported languages, or alignment errors produce a warning
+and keep the original Whisper timestamps.
+
+For diarization, accept the terms for both
+[pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+and [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
+Provide a Hugging Face read token through the environment (never YAML/source):
+
+```sh
+read -rsp 'Hugging Face read token: ' HF_TOKEN; echo
+export HF_TOKEN
+export PIPELINE__DIARIZATION__ENABLED=true
+export PIPELINE__DIARIZATION__SPEAKER_PREFIX=true
+python3 -m app.main process /path/to/presentation.mp4 --keep-source
+unset HF_TOKEN
+```
+
+For a one-off Docker run, stop the watcher first and pass the environment
+explicitly with `docker compose run --rm -e HF_TOKEN
+-e PIPELINE__DIARIZATION__ENABLED=true -e PIPELINE__DIARIZATION__SPEAKER_PREFIX=true
+pipeline python3 -m app.main process /data/inbox/presentation.mp4 --keep-source`.
+For the watcher, explicitly forward these variables in the Compose service's
+`environment` mapping; host exports alone are not forwarded.
+
+`transcript.json` stores speaker labels on segments and words, independently
+assigned to the speaker with the greatest **total** overlapping time.
+Speaker labels survive subtitle retiming; prefixing is optional and does not
+modify transcript text. Labels are anonymous, file-local, and not guaranteed
+to identify the same person across recordings. This labels speakers; it does
+not filter out other speakers. Overlap/ties and nearest-fill are heuristics,
+so review speaker changes manually. Compare settings on the same 3-minute
+clip using the [testing plan](docs/TESTING.md), resetting cached jobs between runs.
 
 ## 5. Outputs and Resolve/YouTube
 

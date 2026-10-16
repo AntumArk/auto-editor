@@ -11,8 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/presentation-pipeline
-COPY requirements.txt .
+COPY requirements.txt requirements-extra.txt ./
+ARG INSTALL_TRANSCRIPTION_EXTRAS=false
 RUN python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt
+RUN if [ "$INSTALL_TRANSCRIPTION_EXTRAS" = "true" ]; then \
+      python3 -m pip install -r requirements.txt -r requirements-extra.txt; \
+    fi
 COPY app ./app
 COPY configs ./configs
 
