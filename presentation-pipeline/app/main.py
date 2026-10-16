@@ -133,12 +133,10 @@ def _process_job(imported, config: PipelineConfig) -> Path:
         lambda: cutlist_module.build_cutlist(candidates, decisions, duration, config),
     )
     cutlist = _restore(cutlist_data, cutlist_module, "CutList")
+    source_stem = Path(imported.original_name).stem
     if state.artifacts.get("cut_exported") is not True:
         cutlist_module.export_with_auto_editor(
-            imported.video_path, cutlist, output_dir, config
-        )
-        (output_dir / "cutlist.json").write_text(
-            cutlist_path.read_text(encoding="utf-8"), encoding="utf-8"
+            imported.video_path, cutlist, output_dir, config, name=source_stem
         )
         state.artifacts["cut_exported"] = True
         state.save()
@@ -147,24 +145,48 @@ def _process_job(imported, config: PipelineConfig) -> Path:
     subtitles_dir = output_dir
 
     def write_subtitles():
-        source_stem = Path(imported.original_name).stem
         source_srt = subtitles_dir / f"{source_stem}.source.srt"
         edited_srt = subtitles_dir / f"{source_stem}.edited.srt"
         subtitles_module.write_srt(transcript["segments"], source_srt)
-        remapped = subtitles_module.remap_segments(transcript["segments"], cutlist)
+        remapped = subtitles_module.remap_segments(transcript["segments"], cutlist.keep)
         subtitles_module.write_srt(remapped, edited_srt)
         return {"source": str(source_srt), "edited": str(edited_srt)}
 
     _stage(state, "subtitles", imported.job_dir / "subtitles.json", write_subtitles)
 
     report_module = _module("report")
+
+    def write_report():
+        summary = report_module.summarize(transcript, config)
+        notes = report_module.review_notes(
+            transcript, decisions, cutlist, config, candidates=candidates
+        )
+        edited_changes = [
+            subtitles_module.map_time(time, cutlist.keep)
+            for time in slide_info["change_times"]
+            if not any(start <= time < end for start, end in cutlist.removed)
+        ]
+        edited_segments = subtitles_module.remap_segments(transcript["segments"], cutlist.keep)
+        chapters = report_module.make_chapters(
+            edited_changes, edited_segments, cutlist.edited_duration,
+            config.report.min_chapter_gap_s,
+        )
+        stats = {
+            "original_duration": cutlist.original_duration,
+            "edited_duration": cutlist.edited_duration,
+            "number_of_cuts": len(cutlist.removed),
+        }
+        report_path = output_dir / f"{source_stem}.report.md"
+        report_module.write_report(
+            report_path, source_stem, summary, chapters, notes, stats
+        )
+        return {"report": str(report_path)}
+
     _stage(
         state,
         "report",
         imported.job_dir / "report.json",
-        lambda: report_module.write_report(
-            transcript, slide_info, candidates, decisions, cutlist, duration, output_dir, config
-        ),
+        write_report,
     )
     state.mark_stage("done")
     return output_dir

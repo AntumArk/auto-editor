@@ -75,6 +75,28 @@ class ChapterTests(unittest.TestCase):
 
 
 class ReviewTests(unittest.TestCase):
+    def test_cuts_accept_removed_mapping_and_cutlist_object(self):
+        for cutlist in (
+            {"cuts": [(3, 8), (6, 10)]},
+            {"removed": [(3, 8), (6, 10)]},
+            types.SimpleNamespace(removed=[(3, 8), (6, 10)]),
+        ):
+            with self.subTest(cutlist=cutlist):
+                self.assertEqual(report._cuts(cutlist), [(3, 10)])
+
+    def test_decision_candidate_lookup_uses_edited_time(self):
+        for candidate in ({"id": "pause", "start": 20},
+                          types.SimpleNamespace(id="pause", start=20)):
+            decision = types.SimpleNamespace(
+                candidate_id="pause", needs_review=True, reason="Unsure",
+            )
+            notes = report.review_notes(
+                [], [decision], {"removed": [(3, 10)]}, {}, candidates=[candidate],
+            )
+            self.assertEqual(notes, [
+                {"time": 13, "message": "LLM decision needs review: Unsure"},
+            ])
+
     def test_flags_and_edited_timestamps(self):
         transcript = [
             {"start": 0, "end": 2, "text": "Pradžia."},

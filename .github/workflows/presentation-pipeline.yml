@@ -1,0 +1,30 @@
+name: presentation-pipeline
+
+on:
+  push:
+    paths:
+      - 'presentation-pipeline/**'
+      - '.github/workflows/presentation-pipeline.yml'
+  pull_request:
+    paths:
+      - 'presentation-pipeline/**'
+      - '.github/workflows/presentation-pipeline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: presentation-pipeline
+    steps:
+      - uses: actions/checkout@v4.3.1
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: presentation-pipeline/requirements-test.txt
+      - run: python -m pip install -r requirements-test.txt
+      - run: pytest

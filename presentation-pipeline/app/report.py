@@ -3,7 +3,7 @@
 Transcripts are segment lists (or dictionaries with ``segments``). Segments and
 words use start/end seconds and text/word fields. Cutlists contain removed
 source-time intervals, as start/end dictionaries or pairs, optionally under
-``cuts``. Review notes contain edited-time ``time`` and ``message`` fields.
+``cuts`` or ``removed``. Review notes contain edited-time ``time`` and ``message`` fields.
 Configuration may use dictionaries or attribute-based objects.
 """
 
@@ -98,7 +98,9 @@ def make_chapters(slide_change_times_edited, edited_segments, edited_duration, m
 
 def _cuts(cutlist):
     intervals = []
-    for cut in _get(cutlist, "cuts", []) if isinstance(cutlist, dict) else cutlist:
+    for cut in _get(cutlist, "removed", _get(
+        cutlist, "cuts", [] if isinstance(cutlist, dict) else cutlist
+    )):
         if isinstance(cut, (tuple, list)):
             start, end = cut[:2]
         else:
@@ -119,7 +121,7 @@ def _edited(time, cuts):
     return max(0.0, time - sum(max(0.0, min(time, end) - start) for start, end in cuts))
 
 
-def review_notes(transcript, decisions, cutlist, cfg):
+def review_notes(transcript, decisions, cutlist, cfg, candidates=None):
     """Flag heuristic review candidates; all returned timestamps are edited time."""
     segments = sorted(_segments(transcript), key=lambda s: _get(s, "start", 0))
     cuts = _cuts(cutlist)
@@ -160,9 +162,18 @@ def review_notes(transcript, decisions, cutlist, cfg):
             if probability is not None and float(probability) < 0.5:
                 add(_get(word, "start", start), "Low word probability; check name/term: "
                     + _text(_get(word, "word", _get(word, "text", ""))))
-    for decision in _get(decisions, "decisions", []) if isinstance(decisions, dict) else decisions:
+    candidate_starts = {
+        _get(candidate, "id"): _get(candidate, "start", 0)
+        for candidate in (candidates or [])
+    }
+    decision_items = (
+        decisions.get("decisions", decisions.values())
+        if isinstance(decisions, dict) else decisions
+    )
+    for decision in decision_items:
         if _get(decision, "needs_review", False):
-            add(_get(decision, "start", 0),
+            candidate_id = _get(decision, "candidate_id", _get(decision, "id"))
+            add(candidate_starts.get(candidate_id, _get(decision, "start", 0)),
                 "LLM decision needs review: " + _text(_get(decision, "reason", "")))
     return sorted(notes, key=lambda note: note["time"])
 
