@@ -154,3 +154,13 @@ def test_report_discards_slide_changes_inside_removed_ranges(pipeline, monkeypat
     )))
     main.process_file(source, config, move=False)
     assert mocks["make_chapters"].call_args.args[0] == [0, 45]
+
+
+@pytest.mark.parametrize("flag", ["--keep-source", "--copy", None])
+def test_process_cli_source_handling(pipeline, monkeypatch, flag):
+    config, source, mocks = pipeline
+    monkeypatch.setattr(main, "load_config", lambda _: config)
+    monkeypatch.setattr(sys, "argv", ["pipeline", "process", str(source)] + ([flag] if flag else []))
+    main.main()
+    assert source.exists() == bool(flag)
+    assert next(Path(config.paths.workdir).glob("*/source.mp4")).is_file()

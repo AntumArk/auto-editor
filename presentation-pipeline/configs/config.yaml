@@ -5,6 +5,8 @@ paths:
 
 transcription:
   model: large-v3
+  device: auto
+  compute_type: auto
   language: lt
   task: transcribe
   vad: true

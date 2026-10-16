@@ -14,7 +14,7 @@ This Python service is separate from the existing Nim `auto-editor` CLI: it call
 the `auto-editor` executable, without modifying the Nim core. The Docker image
 installs the packaged CLI from `requirements.txt`, not this repository's Nim build.
 Each job has a JSON state file and cached stage artifacts under
-`/data/work/<job_id>`, so a restart resumes from the last completed stage.
+`/data/work/<job_id>`, so resubmitted jobs can reuse completed stages.
 
 See the [FAQ](docs/FAQ.md), [testing plan](docs/TESTING.md), and
 [test report template](docs/TEST_REPORT_TEMPLATE.md).
@@ -22,7 +22,93 @@ Commands below have been checked against source, not run on a GPU/NAS/Resolve
 installation. OS packages, mount options, and Resolve UI details are approximate
 and must be adapted to your environment.
 
-## 1. Requirements and GPU setup
+## Low-end / CPU-only quick start
+
+No NVIDIA GPU, driver, Container Toolkit, or Ollama is required for this setup.
+CPU transcription is slower; start with a short clip and the `small` model
+(use `tiny` or `base` on especially limited machines). Initial downloads require
+internet access.
+
+### Docker
+
+Run from `presentation-pipeline/`:
+
+```sh
+docker compose -f docker-compose.cpu.yml up --build -d
+docker compose -f docker-compose.cpu.yml logs -f pipeline
+```
+
+Open <http://127.0.0.1:8000>. This is a **standalone** Compose file, not an
+override to merge with `docker-compose.yml`: it starts only the pipeline, without
+GPU reservations or an Ollama dependency. It reuses the existing CUDA-based
+Dockerfile; that shared image is larger than a dedicated CPU image but can run
+on CPU-only Docker without the NVIDIA Container Toolkit.
+
+Defaults are LLM disabled, transcription device `cpu`, model `small`, and language
+`null` (automatic detection). Bind mounts default to `./data/inbox`,
+`./data/output`, and `./data/work`; optionally set `PIPELINE_INBOX`,
+`PIPELINE_OUTPUT`, and `PIPELINE_WORKDIR` to writable host directories before
+starting. Container paths remain `/data/inbox`, `/data/output`, and `/data/work`.
+The named `whisper-cache` volume persists downloaded models.
+
+Stop with `docker compose -f docker-compose.cpu.yml down`; omit `-v` to retain
+the model cache.
+
+### Native Python
+
+Install Python **3.10+**, its venv support, and FFmpeg (including `ffprobe`) using
+your OS package manager; ensure both FFmpeg commands are on `PATH`. From
+`presentation-pipeline/`:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -r requirements.txt
+export PIPELINE__PATHS__INBOX="$PWD/data/inbox"
+export PIPELINE__PATHS__OUTPUT="$PWD/data/output"
+export PIPELINE__PATHS__WORKDIR="$PWD/data/work"
+export PIPELINE__LLM__ENABLED=false
+export PIPELINE__TRANSCRIPTION__DEVICE=cpu
+export PIPELINE__TRANSCRIPTION__MODEL=small
+export PIPELINE__TRANSCRIPTION__LANGUAGE=null
+python3 -m app.main serve
+```
+
+`serve`/ingest create the local directories as needed; their parent locations
+must be writable. Requirements install the packaged `auto-editor` CLI; keep the
+venv active so it is on `PATH`. Open <http://127.0.0.1:8000>.
+
+### Web UI
+
+Upload a video (maximum **16 GiB**) or submit a file path **inside the configured
+inbox only**. For Docker, a path means `/data/inbox/presentation.mp4`, not an
+arbitrary host path. The server keeps the source file in the inbox rather than
+moving it. Choose a Whisper model (`tiny`, `base`, `small`, `medium`, or
+`large-v3`), language (leave blank for automatic detection, or enter a code such
+as `en`/`lt`), and whether
+to use LLM review. Enabling LLM requires a reachable, configured Ollama service
+with its model already pulled; the CPU Compose file does not provide one.
+
+One worker processes jobs sequentially. The job list shows status and the last
+completed stage; errors appear on the job detail page. **Refresh manually** for
+updates. Completed jobs expose output download links and a rendered Markdown
+report with raw HTML escaped. Settings apply only to newly submitted jobs;
+completed stages are cached by source name/content, so changing settings does
+not recompute an existing job.
+See [Reset a job](#reset-a-job) when you need a fresh run.
+
+Run **one server instance per work directory**, and do not run a watcher or
+manual processor against the same work directory concurrently. Queued jobs are
+not automatically restarted after a server restart: resubmit them to reuse
+persisted stages.
+
+Native `serve` binds to loopback by default. The CPU container listens on
+`0.0.0.0` internally, but publishes only `127.0.0.1:8000:8000` on the host.
+There is **no authentication or TLS**. Use `--host 0.0.0.0` (and change Docker
+port publishing, if needed) only on a trusted network; never expose it directly
+to the internet.
+
+## 1. Requirements and GPU setup (optional)
 
 - Linux host with a working NVIDIA driver (`nvidia-smi` succeeds).
 - NVIDIA GPU; the intended test target is an RTX 3070 with 8 GB VRAM, not a
@@ -51,8 +137,9 @@ nvidia-smi
 docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 ```
 
-Do not proceed until the last command sees your GPU. Both Compose services
-request NVIDIA GPUs.
+For the GPU deployment, do not proceed until the last command sees your GPU.
+Both services in the default `docker-compose.yml` request NVIDIA GPUs; the
+CPU-only quick start above does not.
 
 ## 2. Mount the NAS and choose storage
 
@@ -88,7 +175,8 @@ export PIPELINE_OUTPUT=/mnt/nas/presentation-output
 export PIPELINE_WORKDIR=/var/lib/presentation-pipeline/work
 ```
 
-These are **host bind-mount variables** used by Compose:
+These are **host bind-mount variables** used by the default GPU Compose file
+(the CPU file instead defaults to `./data/inbox`, `./data/output`, `./data/work`):
 
 | Compose variable | Host default | Container destination |
 | --- | --- | --- |
@@ -158,6 +246,17 @@ and recreate with `docker compose up -d pipeline`. Exporting this variable in th
 host shell or adding it to `.env` alone does **not** pass it into the service.
 Compose still starts its `ollama` dependency unless `--no-deps` is used.
 
+To preserve the input file instead of moving it, use `process --keep-source`
+(`--copy` is an alias), for example in the native environment above:
+
+```sh
+python3 -m app.main process /path/to/presentation.mp4 --keep-source
+```
+
+The CLI can process a local path outside the inbox; the Web UI deliberately
+restricts submitted paths to the configured inbox. Server jobs always keep
+their inbox source.
+
 ## 4. Configuration reference
 
 Defaults below are from [`configs/config.yaml`](configs/config.yaml).
@@ -171,6 +270,8 @@ or explicitly add them to the Compose service environment.
 | `paths.output` | `/data/output` | Root for per-job deliverables. |
 | `paths.workdir` | `/data/work` | Source videos, state, and cached stage artifacts. |
 | `transcription.model` | `large-v3` | faster-whisper model name or supported model path. |
+| `transcription.device` | `auto` | `auto` tries CUDA and broadly falls back to CPU if CUDA initialization or transcription fails; `cpu` forces CPU; explicit `cuda` fails rather than silently falling back. |
+| `transcription.compute_type` | `auto` | `auto` selects GPU `float16` or CPU `int8`; an explicit faster-whisper compute type overrides this selection. |
 | `transcription.language` | `lt` | Whisper language hint; YAML `null` enables automatic detection. |
 | `transcription.task` | `transcribe` | Whisper task; `transcribe` preserves spoken language, `translate` translates into English. |
 | `transcription.vad` | `true` | Enable voice activity filtering during transcription. |
@@ -199,8 +300,9 @@ at build time. Rebuild/recreate, or bind-mount your own YAML and use
 `python3 -m app.main --config /path/in/container/config.yaml watch`
 (`--config` precedes the subcommand). Completed stages remain cached even after
 configuration changes; [reset the job](#reset-a-job) to apply changes throughout.
-Unknown keys are ignored by the dataclass loader: do not assume undocumented
-environment variables such as a compute-type setting take effect.
+Unknown keys are ignored by the dataclass loader; use the documented settings.
+For example, `PIPELINE__TRANSCRIPTION__DEVICE=cpu` forces CPU transcription and
+`PIPELINE__TRANSCRIPTION__COMPUTE_TYPE=int8` explicitly selects integer precision.
 
 ## 5. Outputs and Resolve/YouTube
 
@@ -258,17 +360,20 @@ volumes; it does not erase bind-mounted inbox/output/work directories.
 
 ### Reset a job
 
-Restarts resume pending jobs from cached stages; completed jobs are skipped.
+The watcher resumes pending jobs on restart; the Web UI requires resubmission
+after a restart. Completed jobs are skipped, and resubmissions reuse cached stages.
 The same source stem/content maps to the same job ID. To force a fresh run:
 
-1. Stop the watcher (`docker compose stop pipeline`) and any manual processing.
+1. Stop the server/watcher (for CPU Docker,
+   `docker compose -f docker-compose.cpu.yml stop pipeline`) and any manual processing.
 2. Find the exact job ID in the work directory/state. **Back up its source video
    outside the work directory first**; ingest moved your inbox copy there.
 3. Delete only that job's `/data/work/<job_id>` folder (on the host,
    `$PIPELINE_WORKDIR/<job_id>`). This removes the source, state, and all cached
    steps. Do not delete the entire work root.
 4. Archive/remove that job's matching output folder to avoid stale deliverables.
-5. Copy the backed-up video into the inbox again and start the watcher.
+5. Copy the backed-up video into the inbox again and start the watcher, or
+   restart the server and resubmit it through the Web UI.
 
 Do not delete only output files: a completed state will prevent regeneration.
 

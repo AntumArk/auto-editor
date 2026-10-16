@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Presentation pipeline</title>
+<h1>Presentation pipeline</h1>
+<form action="{{ url_for('submit') }}" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="token" value="{{ token }}">
+  <p><label>Upload video (up to 16 GiB): <input type="file" name="video"></label></p>
+  <p>OR <label>Server file inside {{ config.paths.inbox }}:
+    <input type="text" name="path" placeholder="talk.mp4"></label></p>
+  <p><label>Model:
+    <select name="model">
+    {% for model in models %}
+      <option{% if model == config.transcription.model %} selected{% endif %}>{{ model }}</option>
+    {% endfor %}
+    {% if config.transcription.model not in models %}
+      <option selected>{{ config.transcription.model }}</option>
+    {% endif %}
+    </select>
+  </label></p>
+  <p><label>Language (blank = auto):
+    <input name="language" value="{{ config.transcription.language or '' }}" placeholder="en">
+  </label></p>
+  <p><label><input type="checkbox" name="llm"{% if config.llm.enabled %} checked{% endif %}> Use LLM (requires configured Ollama)</label></p>
+  <button type="submit">Queue video</button>
+</form>
+<h2>Jobs</h2>
+<p>Jobs run one at a time. Refresh to update progress. Server files are copied, not moved.
+Settings apply to new jobs; cached stages are reused on resubmission.</p>
+<table>
+  <thead><tr><th>Job ID</th><th>Original name</th><th>Last completed stage</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for state in jobs %}
+    <tr><td><a href="{{ url_for('job', job_id=state.job_dir.name) }}">{{ state.job_id }}</a></td>
+      <td>{{ state.original_name }}</td><td>{{ state.stage }}</td>
+      <td>{{ 'done' if state.stage == 'done' else state.status }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</html>
