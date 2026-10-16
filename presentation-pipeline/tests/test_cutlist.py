@@ -181,6 +181,28 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(run.call_args_list[1].args[0][6:8], ["--export", "default"])
 
     @patch("cutlist.subprocess.run")
+    def test_multiple_cuts_repeat_flag_for_resolve_and_preview(self, run):
+        result = build_cutlist(
+            [candidate(), candidate(845.12, 847.6, "later"),
+             candidate(900, 904, "last")],
+            {}, 1000, config(),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            export_with_auto_editor(
+                "talk.mp4", result, directory, {"export": {"preview": True}},
+            )
+        self.assertEqual(run.call_count, 2)
+        expected_cuts = [
+            "--cut-out", "2.300000000sec,5.700000000sec",
+            "--cut-out", "845.420000000sec,847.300000000sec",
+            "--cut-out", "900.300000000sec,903.700000000sec",
+        ]
+        for call, export_format in zip(run.call_args_list, ("resolve", "default")):
+            command = call.args[0]
+            self.assertEqual(command[4:10], expected_cuts)
+            self.assertEqual(command[10:12], ["--export", export_format])
+
+    @patch("cutlist.subprocess.run")
     def test_no_cuts_omits_cut_flag_and_preserves_whole_source(self, run):
         with tempfile.TemporaryDirectory() as directory:
             export_with_auto_editor("talk.mp4", build_cutlist([], {}, 10, {}), directory, {})

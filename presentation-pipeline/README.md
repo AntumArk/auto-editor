@@ -22,6 +22,10 @@ during the build. Older Ubuntu 22.04 images fail at export with
 the existing job; there is no need to transcribe it again.
 Exports use `--edit none` plus the pipeline's explicit cut ranges: `--edit all`
 would remove the entire source and fail with an empty timeline.
+Each range needs its own `--cut-out` flag. An export error such as
+`Could not open input file: 845.420000000sec,847.300000000sec` means a range
+was treated as another input file. Update the pipeline and rebuild/restart it,
+then use **Retry from saved stage** to reuse the completed analysis.
 
 See the [FAQ](docs/FAQ.md), [testing plan](docs/TESTING.md), and
 [test report template](docs/TEST_REPORT_TEMPLATE.md).

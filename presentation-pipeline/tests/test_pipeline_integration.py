@@ -81,6 +81,15 @@ def assert_outputs(output, config, mocks, keep=False):
     audit = json.loads((output / "Original talk.cutlist.json").read_text())
     expected_removed = [[6, 14], [71, 79]] if keep else [[6, 14], [36, 44], [71, 79]]
     assert audit["removed"] == expected_removed
+    expected_cuts = [
+        argument
+        for start, end in expected_removed
+        for argument in ("--cut-out", f"{start:.9f}sec,{end:.9f}sec")
+    ]
+    for call in mocks["export"].call_args_list:
+        command = call.args[0]
+        assert command[4:4 + len(expected_cuts)] == expected_cuts
+        assert command[4 + len(expected_cuts)] == "--export"
     assert audit["original_duration"] == 80
     assert audit["edited_duration"] == (64 if keep else 56)
     assert audit["edited_duration"] == 80 - sum(end - start for start, end in audit["removed"])

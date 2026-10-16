@@ -119,10 +119,9 @@ def _run_auto_editor(command):
 
 def _edit_command(video, cutlist):
     command = ["auto-editor", str(Path(video).resolve()), "--edit", "none"]
-    if cutlist.removed:
-        command.append("--cut-out")
+    for start, end in cutlist.removed:
         # Bare numbers mean frames in this CLI, so always include seconds units.
-        command.extend(f"{start:.9f}sec,{end:.9f}sec" for start, end in cutlist.removed)
+        command.extend(["--cut-out", f"{start:.9f}sec,{end:.9f}sec"])
     return command
 
 
