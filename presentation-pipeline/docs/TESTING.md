@@ -32,7 +32,7 @@ configuration, and state tests.
 
 ```bash
 nvidia-smi
-docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi
 cd presentation-pipeline
 docker compose build
 docker compose up -d ollama

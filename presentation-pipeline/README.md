@@ -16,6 +16,13 @@ installs the packaged CLI from `requirements.txt`, not this repository's Nim bui
 Each job has a JSON state file and cached stage artifacts under
 `/data/work/<job_id>`, so resubmitted jobs can reuse completed stages.
 
+The image uses Ubuntu 24.04 (glibc 2.39) and verifies `auto-editor --version`
+during the build. Older Ubuntu 22.04 images fail at export with
+`GLIBC_2.38 not found`. Rebuild the image and resubmit the same source to resume
+from cached stages; there is no need to transcribe it again.
+Exports use `--edit none` plus the pipeline's explicit cut ranges: `--edit all`
+would remove the entire source and fail with an empty timeline.
+
 See the [FAQ](docs/FAQ.md), [testing plan](docs/TESTING.md), and
 [test report template](docs/TEST_REPORT_TEMPLATE.md).
 Commands below have been checked against source, not run on a GPU/NAS/Resolve
@@ -29,6 +36,15 @@ CPU transcription is slower; start with a short clip and the `small` model
 (use `tiny` or `base` on especially limited machines). Initial downloads require
 internet access.
 
+CPU is also the recommended starting point for a GeForce 840M with 2 GB VRAM.
+The CUDA version shown by `nvidia-smi` is a driver capability, not proof that
+the installed inference libraries support this older GPU. GPU transcription
+with `tiny` or `base` is unverified on this hardware; no CPU/GPU speed comparison
+has been measured. The default GPU models are not suitable for its memory budget.
+
+Speaker diarization (identifying who spoke when) is not implemented. It is not
+a disabled default; speech activity detection does not identify speakers.
+
 ### Docker
 
 Run from `presentation-pipeline/`:
@@ -40,9 +56,9 @@ docker compose -f docker-compose.cpu.yml logs -f pipeline
 
 Open <http://127.0.0.1:8000>. This is a **standalone** Compose file, not an
 override to merge with `docker-compose.yml`: it starts only the pipeline, without
-GPU reservations or an Ollama dependency. It reuses the existing CUDA-based
-Dockerfile; that shared image is larger than a dedicated CPU image but can run
-on CPU-only Docker without the NVIDIA Container Toolkit.
+GPU reservations or an Ollama dependency. It uses the shared Dockerfile with a
+plain Ubuntu 24.04 base instead of downloading the multi-GB CUDA runtime.
+The default GPU Compose file still uses the CUDA base.
 
 Defaults are LLM disabled, transcription device `cpu`, model `small`, and language
 `null` (automatic detection). Bind mounts default to `./data/inbox`,
@@ -117,7 +133,7 @@ to the internet.
   Follow the [Docker installation guide](https://docs.docker.com/engine/install/)
   for your distribution. Docker access is effectively root access; grant it only
   to trusted users.
-- NVIDIA Container Toolkit and a driver compatible with the CUDA 12.4.1 image.
+- NVIDIA Container Toolkit and a driver compatible with the CUDA 12.8.1 image.
   A host CUDA development toolkit is not required.
 - Writable inbox, output, and working directories; space for source videos,
   models, artifacts, and any rendered previews. Internet is needed initially for
@@ -134,7 +150,7 @@ sudo apt-get install -y nvidia-container-toolkit
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 nvidia-smi
-docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi
 ```
 
 For the GPU deployment, do not proceed until the last command sees your GPU.

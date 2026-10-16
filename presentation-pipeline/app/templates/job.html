@@ -2,6 +2,9 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+{% if state.status in ('queued', 'running') and state.stage != 'done' %}
+<meta http-equiv="refresh" content="5">
+{% endif %}
 <title>{{ state.original_name }} — Presentation pipeline</title>
 <p><a href="{{ url_for('jobs') }}">Upload / all jobs</a></p>
 <h1>{{ state.original_name }}</h1>
@@ -15,7 +18,10 @@
 {% endfor %}
 </ol>
 {% if state.error %}<p>Error: {{ state.error }}</p>{% endif %}
-<p>Refresh this page to update progress.</p>
+{% if state.status in ('queued', 'running') and state.stage != 'done' %}
+<p>This page updates every 5 seconds. A stage is marked complete only after it finishes.
+The first transcription may also download the model.</p>
+{% endif %}
 <h2>Outputs</h2>
 <ul>
 {% for filename in files %}

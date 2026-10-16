@@ -73,6 +73,7 @@ def test_upload_job_detail_report_and_outputs(ui):
     page = client.get(response.location)
     assert page.status_code == 200
     assert "done" in page.text
+    assert 'http-equiv="refresh"' not in page.text
     assert "<h1>Report</h1>" in page.text
     assert "<script>" not in page.text
     assert 'href="javascript:' not in page.text
@@ -114,6 +115,7 @@ def test_worker_records_error_and_keeps_last_completed_stage(ui):
     drain(app)
     page = client.get(response.location)
     assert "failed" in page.text
+    assert 'http-equiv="refresh"' not in page.text
     assert "Last completed stage: transcribed" in page.text
     assert "&lt;script&gt;unsupported GPU" in page.text
     state = JobState.load(next(Path(config.paths.workdir).glob("*/state.json")))
@@ -140,6 +142,8 @@ def test_single_worker_queues_jobs_and_deduplicates_active_source(ui):
         assert first.location == duplicate.location
         assert run.call_count == 1
         assert "queued" in client.get(second.location).text
+        assert 'http-equiv="refresh" content="5"' in client.get(second.location).text
+        assert 'http-equiv="refresh" content="5"' in client.get(first.location).text
     finally:
         release.set()
     drain(app)

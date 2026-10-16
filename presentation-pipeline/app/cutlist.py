@@ -109,11 +109,19 @@ def build_cutlist(candidates, decisions, duration, cfg):
     return CutList(merged, keep, duration, math.fsum(end - start for start, end in keep))
 
 
+def _run_auto_editor(command):
+    try:
+        subprocess.run(command, check=True, stderr=subprocess.PIPE, text=True)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or str(exc)).strip()
+        raise RuntimeError(f"auto-editor export failed (exit {exc.returncode}): {detail}") from exc
+
+
 def export_with_auto_editor(video, cutlist, out_dir, cfg, name=None):
     """Write audit JSON and Resolve FCPXML; optionally render a preview MP4.
 
     Set ``cfg.export.preview`` to enable the preview. Return artifact paths.
-    ``--edit all`` prevents auto-editor from adding its own audio-based cuts.
+    ``--edit none`` keeps the source except for our explicit cut ranges.
     """
     video = Path(video).resolve()
     out_dir = Path(out_dir).resolve()
@@ -122,17 +130,17 @@ def export_with_auto_editor(video, cutlist, out_dir, cfg, name=None):
     audit = out_dir / f"{stem}.cutlist.json"
     timeline = out_dir / f"{stem}.fcpxml"
     cutlist.to_json(audit)
-    command = ["auto-editor", str(video), "--edit", "all"]
+    command = ["auto-editor", str(video), "--edit", "none"]
     if cutlist.removed:
         command.append("--cut-out")
         # Bare numbers mean frames in this CLI, so always include seconds units.
         command.extend(f"{start:.9f}sec,{end:.9f}sec" for start, end in cutlist.removed)
-    subprocess.run(
-        [*command, "--export", "resolve", "--output", str(timeline)], check=True,
+    _run_auto_editor(
+        [*command, "--export", "resolve", "--output", str(timeline)],
     )
     artifacts = {"cutlist": audit, "resolve": timeline}
     if _get(_get(cfg, "export", {}), "preview", False):
         preview = out_dir / f"{stem}.preview.mp4"
-        subprocess.run([*command, "--export", "default", "--output", str(preview)], check=True)
+        _run_auto_editor([*command, "--export", "default", "--output", str(preview)])
         artifacts["preview"] = preview
     return artifacts

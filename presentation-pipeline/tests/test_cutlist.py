@@ -172,9 +172,11 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(run.call_count, 2)
             for call in run.call_args_list:
                 command = call.args[0]
-                self.assertEqual(command[:4], ["auto-editor", str(source), "--edit", "all"])
+                self.assertEqual(command[:4], ["auto-editor", str(source), "--edit", "none"])
                 self.assertEqual(command[4:6], ["--cut-out", "2.300000000sec,5.700000000sec"])
-                self.assertEqual(call.kwargs, {"check": True})
+                self.assertEqual(
+                    call.kwargs, {"check": True, "stderr": subprocess.PIPE, "text": True},
+                )
             self.assertEqual(run.call_args_list[0].args[0][6:8], ["--export", "resolve"])
             self.assertEqual(run.call_args_list[1].args[0][6:8], ["--export", "default"])
 
@@ -184,12 +186,16 @@ class ExportTests(unittest.TestCase):
             export_with_auto_editor("talk.mp4", build_cutlist([], {}, 10, {}), directory, {})
         command = run.call_args.args[0]
         self.assertNotIn("--cut-out", command)
-        self.assertEqual(command[2:4], ["--edit", "all"])
+        self.assertEqual(command[2:4], ["--edit", "none"])
         run.assert_called_once()
 
-    @patch("cutlist.subprocess.run", side_effect=subprocess.CalledProcessError(1, "auto-editor"))
+    @patch("cutlist.subprocess.run", side_effect=subprocess.CalledProcessError(
+        1, "auto-editor", stderr="GLIBC_2.38 not found",
+    ))
     def test_export_failure_propagates(self, run):
-        with tempfile.TemporaryDirectory() as directory, self.assertRaises(subprocess.CalledProcessError):
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(
+            RuntimeError, r"auto-editor export failed \(exit 1\): GLIBC_2.38 not found",
+        ):
             export_with_auto_editor("talk.mp4", CutList([], [(0, 10)], 10, 10), directory, {})
 
 

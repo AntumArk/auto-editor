@@ -10,7 +10,7 @@ verified on your machine. Replace example filenames and job IDs before running t
 First run `nvidia-smi` on the host, then:
 
 ```sh
-docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi
 ```
 
 If the host fails, fix the NVIDIA driver first. If only the container fails,
@@ -192,9 +192,9 @@ docker compose -f docker-compose.cpu.yml up --build -d
 
 This standalone file has no GPU reservations or Ollama dependency; do not merge
 it with the GPU Compose file. It forces device `cpu`, model `small`, automatic
-language detection, and LLM disabled. The shared CUDA-based image is larger than
-a CPU-specific image, but needs no NVIDIA driver or Container Toolkit to run on
-CPU. Expect slower transcription; try `tiny` or `base` for limited hardware.
+language detection, and LLM disabled. The CPU build uses a plain Ubuntu 24.04
+base and needs no NVIDIA driver, Container Toolkit, or CUDA image download.
+Expect slower transcription; try `tiny` or `base` for limited hardware.
 The README also documents native Python 3.10+, requirements, FFmpeg, and writable
 local path overrides.
 
@@ -211,8 +211,12 @@ Submitted paths must be inside the configured inbox (Docker:
 The server keeps inbox source files; CLI `process` moves them unless you use
 `--keep-source` (alias `--copy`).
 
-The UI has one sequential worker and requires manual refresh to see progress,
-the last completed stage, errors, output links, and escaped Markdown reports.
+The UI has one sequential worker. Queued and running job detail pages refresh
+every five seconds; the job list still requires manual refresh. Progress shows
+the last completed stage, not partial progress within a stage. The initial
+transcription may also download the model. Failed jobs show errors; resubmit
+the same source to resume cached stages after fixing the cause. Finished pages
+show output links and escaped Markdown reports.
 Native serving defaults to loopback; CPU Docker publishes only
 `127.0.0.1:8000`. There is no authentication or TLS. Bind to `0.0.0.0` or change
 the published host address only on a trusted network, never the public internet.

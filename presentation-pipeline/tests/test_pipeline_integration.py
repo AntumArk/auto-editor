@@ -1,6 +1,7 @@
 """Exercise pipeline wiring without media tools, GPU models, or network."""
 
 import json
+import subprocess
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -50,11 +51,13 @@ def pipeline(tmp_path, monkeypatch):
         mocks[name] = Mock(**options)
         monkeypatch.setattr(module, name, mocks[name])
 
-    def export(command, *, check):
+    def export(command, *, check, stderr, text):
         assert check is True
+        assert stderr == subprocess.PIPE
+        assert text is True
         assert command[:4] == ["auto-editor", str(next(
             Path(config.paths.workdir).glob("*/source.mp4")
-        )), "--edit", "all"]
+        )), "--edit", "none"]
         Path(command[-1]).write_text("mock export", encoding="utf-8")
 
     mocks["export"] = Mock(side_effect=export)

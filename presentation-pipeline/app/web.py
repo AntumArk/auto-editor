@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+import logging
 from pathlib import Path
 import re
 import secrets
@@ -64,6 +65,7 @@ class JobWorker:
             state.status, state.error = "done", None
             state.save()
         except Exception as exc:
+            logging.getLogger(__name__).exception("Job %s failed", imported.job_id)
             state = JobState.load(imported.job_dir / "state.json")
             state.status, state.error = "failed", str(exc)
             state.save()

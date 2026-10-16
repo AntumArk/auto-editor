@@ -1,6 +1,9 @@
 services:
   pipeline:
-    build: .
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ubuntu:24.04
     restart: unless-stopped
     environment:
       PIPELINE__LLM__ENABLED: "false"
