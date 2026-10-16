@@ -97,6 +97,15 @@ class ReviewTests(unittest.TestCase):
                 {"time": 13, "message": "LLM decision needs review: Unsure"},
             ])
 
+    def test_id_keyed_decision_mapping_preserves_candidate_lookup(self):
+        notes = report.review_notes(
+            [], {"pause": {"needs_review": True, "reason": "Unsure"}},
+            {"removed": [(3, 10)]}, {}, candidates=[{"id": "pause", "start": 20}],
+        )
+        self.assertEqual(notes, [
+            {"time": 13, "message": "LLM decision needs review: Unsure"},
+        ])
+
     def test_flags_and_edited_timestamps(self):
         transcript = [
             {"start": 0, "end": 2, "text": "Pradžia."},

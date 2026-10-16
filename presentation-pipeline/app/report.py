@@ -167,12 +167,16 @@ def review_notes(transcript, decisions, cutlist, cfg, candidates=None):
         for candidate in (candidates or [])
     }
     decision_items = (
-        decisions.get("decisions", decisions.values())
+        decisions.get("decisions", decisions)
         if isinstance(decisions, dict) else decisions
     )
-    for decision in decision_items:
+    decision_items = (
+        decision_items.items() if isinstance(decision_items, dict)
+        else ((None, decision) for decision in decision_items)
+    )
+    for key, decision in decision_items:
         if _get(decision, "needs_review", False):
-            candidate_id = _get(decision, "candidate_id", _get(decision, "id"))
+            candidate_id = _get(decision, "candidate_id", _get(decision, "id", key))
             add(candidate_starts.get(candidate_id, _get(decision, "start", 0)),
                 "LLM decision needs review: " + _text(_get(decision, "reason", "")))
     return sorted(notes, key=lambda note: note["time"])
