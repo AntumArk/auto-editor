@@ -163,8 +163,7 @@ def create_app(config: PipelineConfig) -> Flask:
                 abort(400, "Unsupported video extension")
 
         if local_path:
-            source = Path(local_path).expanduser()
-            source = _contained(inbox, str(source))
+            source = _contained(inbox, local_path)
             validate_video(source)
             if not source.is_file():
                 abort(400, "Server file does not exist in the inbox")
